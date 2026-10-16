@@ -157,7 +157,7 @@ begin
     from public.expresso_owner_private_state s
     cross join lateral jsonb_array_elements(coalesce(s.payload->'orders', '[]'::jsonb)) as src(order_payload)
     where s.id = true
-      and coalesce(lower(s.payload->'orders'->0->>'demo'), 'false') <> 'true'
+      and coalesce(lower(order_payload->>'demo'), 'false') <> 'true'
   loop
     v_external_id := 'legacy:' || coalesce(nullif(trim(v_order->>'id'), ''), md5(v_order::text));
     v_source := case
@@ -352,7 +352,7 @@ revoke all on function public.sync_expresso_public_catalog_after_product_change(
 drop trigger if exists products_sync_expresso_public_catalog on public.products;
 create trigger products_sync_expresso_public_catalog
 after insert or update or delete on public.products
-for each statement execute function public.sync_expresso_public_catalog_after_product_change();
+for each row execute function public.sync_expresso_public_catalog_after_product_change();
 
 drop trigger if exists categories_sync_expresso_public_catalog on public.categories;
 create trigger categories_sync_expresso_public_catalog
