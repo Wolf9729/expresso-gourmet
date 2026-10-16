@@ -236,13 +236,108 @@ async function loadLiveOrders(){
  orders=(Array.isArray(body)?body:[]).map(function(o){return {id:String(o.id),n:Number(o.order_number)||0,name:o.customer_name||'Cliente',phone:o.customer_phone||'',status:o.status,total:Number(o.total)||0,createdAt:o.created_at,paymentStatus:o.payment_status,items:(o.order_items||[]).map(function(i){return [i.product_name,Number(i.quantity)||1]}),demo:false};});
  ordersAreLive=true;renderAdmin();
 }
+function salesDateKey(value){
+ var d=value instanceof Date?value:new Date(value);
+ if(!Number.isFinite(d.getTime()))return null;
+ var parts=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Fortaleza',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d),o={};
+ parts.forEach(function(p){o[p.type]=p.value});
+ return o.year+'-'+o.month+'-'+o.day;
+}
+function shiftSalesDate(key,offset){
+ var p=String(key).split('-').map(Number),d=new Date(Date.UTC(p[0],p[1]-1,p[2]+offset));
+ return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+}
+function legacyStatus(value){
+ var s=String(value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+ if(['finalizado','finalizada','completed','concluido','concluida'].includes(s))return 'completed';
+ if(['cancelado','cancelada','cancelled','canceled'].includes(s))return 'cancelled';
+ if(['em preparo','em preparacao','preparing'].includes(s))return 'preparing';
+ if(['pronto','ready'].includes(s))return 'ready';
+ if(['confirmado','confirmed'].includes(s))return 'confirmed';
+ return 'new';
+}
+function buildLegacyAnalytics(payload,days){
+ var period=Math.max(1,Number(days)||30),today=salesDateKey(new Date()),from=shiftSalesDate(today,-period+1),prevFrom=shiftSalesDate(from,-period),prevTo=shiftSalesDate(from,-1);
+ var raw=Array.isArray(payload&&payload.orders)?payload.orders:[];
+ var records=raw.filter(function(o){return String(o.demo||'').toLowerCase()!=='true';}).map(function(o){return Object.assign({},o,{_date:salesDateKey(o.createdAt||o.created_at),_status:legacyStatus(o.status)});}).filter(function(o){return !!o._date;});
+ var weekNames=['Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado','Domingo'];
+ function emptyDay(key){
+  var d=new Date(key+'T12:00:00-03:00'),weekday=new Intl.DateTimeFormat('pt-BR',{weekday:'long',timeZone:'America/Fortaleza'}).format(d);
+  weekday=weekday.charAt(0).toUpperCase()+weekday.slice(1);
+  return {date:key,day:weekday,orders:0,paid_orders:0,paid_revenue:0,units_sold:0};
+ }
+ function aggregate(start,end,collect){
+  var result={orders:0,open_orders:0,completed_orders:0,cancelled_orders:0,paid_orders:0,paid_revenue:0,average_paid_ticket:0,units_sold:0};
+  var dates={},weekdays={},hours={},products={};
+  if(collect){
+   for(var di=0;di<period;di++){var dk=shiftSalesDate(from,di);dates[dk]=emptyDay(dk);}
+   weekNames.forEach(function(w,idx){weekdays[w.toLowerCase()]={weekday:idx+1,day:w,orders:0,paid_orders:0,paid_revenue:0,units_sold:0};});
+  }
+  records.filter(function(o){return o._date>=start&&o._date<=end;}).forEach(function(o){
+   result.orders++;
+   if(o._status==='cancelled')result.cancelled_orders++;
+   if(['new','confirmed','preparing','ready'].includes(o._status))result.open_orders++;
+   if(o._status!=='completed')return;
+   result.completed_orders++;
+   var paid=['paid','pago','confirmed','confirmado'].includes(String(o.paymentStatus||o.payment_status||'').toLowerCase());
+   var total=Math.max(0,Number(o.total)||0);
+   if(paid){result.paid_orders++;result.paid_revenue+=total;}
+   var items=Array.isArray(o.items)?o.items:[];
+   var dayRow=collect?dates[o._date]:null;
+   var wdRaw=new Intl.DateTimeFormat('pt-BR',{weekday:'long',timeZone:'America/Fortaleza'}).format(new Date(o.createdAt||o.created_at));
+   var weekRow=collect?weekdays[wdRaw]:null;
+   var hour=Number(new Intl.DateTimeFormat('en-US',{hour:'2-digit',hourCycle:'h23',timeZone:'America/Fortaleza'}).format(new Date(o.createdAt||o.created_at)));
+   if(collect){
+    if(dayRow){dayRow.orders++;if(paid){dayRow.paid_orders++;dayRow.paid_revenue+=total;}}
+    if(weekRow){weekRow.orders++;if(paid){weekRow.paid_orders++;weekRow.paid_revenue+=total;}}
+    if(!hours[hour])hours[hour]={hour:hour,orders:0,paid_orders:0,paid_revenue:0,units_sold:0};
+    hours[hour].orders++;if(paid){hours[hour].paid_orders++;hours[hour].paid_revenue+=total;}
+   }
+   items.forEach(function(it){
+    var qty=Math.max(0,Number(it.qty||it.quantity)||0),price=Math.max(0,Number(it.price||it.unit_price)||0),name=String(it.name||it.product_name||'Produto legado');
+    if(!qty)return;
+    result.units_sold+=qty;
+    if(!collect)return;
+    if(dayRow)dayRow.units_sold+=qty;
+    if(weekRow)weekRow.units_sold+=qty;
+    if(hours[hour])hours[hour].units_sold+=qty;
+    if(!products[name])products[name]={name:name,units_sold:0,gross_sales:0};
+    products[name].units_sold+=qty;products[name].gross_sales+=qty*price;
+   });
+  });
+  result.paid_revenue=Math.round(result.paid_revenue*100)/100;
+  result.average_paid_ticket=result.paid_orders?Math.round(result.paid_revenue/result.paid_orders*100)/100:0;
+  return {summary:result,dates:dates,weekdays:weekdays,hours:hours,products:products};
+ }
+ var current=aggregate(from,today,true),previous=aggregate(prevFrom,prevTo,false);
+ return {
+  source:'legacy',period:{from:from,to:today,days:period},summary:current.summary,
+  daily:Object.keys(current.dates).sort().map(function(k){return current.dates[k]}),
+  weekdays:Object.keys(current.weekdays).map(function(k){return current.weekdays[k]}).sort(function(a,b){return a.weekday-b.weekday}),
+  top_products:Object.keys(current.products).map(function(k){return current.products[k]}).sort(function(a,b){return b.units_sold-a.units_sold||b.gross_sales-a.gross_sales}).slice(0,10),
+  hours:Array.from({length:24},function(_,i){return current.hours[i]||{hour:i,orders:0,paid_orders:0,paid_revenue:0,units_sold:0}}),
+  comparison:{previous_completed_orders:previous.summary.completed_orders,previous_paid_orders:previous.summary.paid_orders,previous_paid_revenue:previous.summary.paid_revenue},
+  methodology:{units_and_products:'Pedidos finalizados do estado legado, excluindo pedidos de demonstração.',paid_revenue:'Soma apenas pedidos com pagamento explicitamente pago/paid; forma de pagamento não comprova recebimento.',timezone:'America/Fortaleza'}
+ };
+}
 async function loadLiveAnalytics(days){
  if(!staffSession||role!=='owner')return;
- analyticsDays=Number(days)||30;var now=new Date(),to=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');
- var fromDate=new Date(now.getFullYear(),now.getMonth(),now.getDate()-analyticsDays+1);
- var from=fromDate.getFullYear()+'-'+String(fromDate.getMonth()+1).padStart(2,'0')+'-'+String(fromDate.getDate()).padStart(2,'0');
- var response=await fetch(URL+'/rest/v1/rpc/get_sales_dashboard',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_from:from,p_to:to})});
+ analyticsDays=Number(days)||30;
+ var today=salesDateKey(new Date()),from=shiftSalesDate(today,-analyticsDays+1);
+ var response=await fetch(URL+'/rest/v1/rpc/get_sales_dashboard',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_from:from,p_to:today})});
  var body=await response.json();if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível carregar a análise de vendas.'));
+ if(Number(body&&body.summary&&body.summary.orders||0)===0){
+  try{
+   var legacyResponse=await fetch(URL+'/rest/v1/rpc/load_expresso_app_state',{method:'POST',headers:staffAuthHeaders(),body:'{}'});
+   if(legacyResponse.ok){
+    var legacyEnvelope=await legacyResponse.json(),legacyPayload=legacyEnvelope&&legacyEnvelope.payload;
+    if(legacyEnvelope&&legacyEnvelope.ok&&legacyPayload){
+     var legacyData=buildLegacyAnalytics(legacyPayload,analyticsDays);
+     if(Number(legacyData.summary.orders||0)>0)body=legacyData;
+    }
+   }
+  }catch(e){console.warn('Não foi possível ler histórico legado:',e&&e.message);}
+ }
  analyticsData=body;renderAdmin();
 }
 function buildDemoAnalytics(){
@@ -282,6 +377,7 @@ function renderAnalyticsMarkup(){
  var header='<div class="welcome"><div><h2>Análise de vendas</h2><p class="muted">Dias de maior saída, produtos líderes, receita paga e comportamento por horário.</p></div><span class="status '+(isDemo?'':'ok')+'">'+(isDemo?'● Dados ilustrativos':'● Supabase')+'</span></div>'+
  '<div class="analytics-toolbar"><div><span class="kicker-note">PERÍODO ANALISADO</span><br><span class="muted">'+period+' dias · fuso America/Fortaleza</span></div><div style="display:flex;gap:8px;align-items:center"><select id="analytics-period" aria-label="Período de análise"><option value="7" '+(period===7?'selected':'')+'>Últimos 7 dias</option><option value="30" '+(period===30?'selected':'')+'>Últimos 30 dias</option><option value="90" '+(period===90?'selected':'')+'>Últimos 90 dias</option><option value="180" '+(period===180?'selected':'')+'>Últimos 180 dias</option></select><button class="btn soft" type="button" onclick="refreshAnalytics()">Atualizar ↻</button></div></div>';
  if(isDemo)header+='<div class="demo"><b>Modo de apresentação.</b> Os números abaixo são inventados para demonstrar os gráficos e não representam as vendas reais da Expresso Gourmet.</div>';
+ if(data&&data.source==='legacy')header+='<div class="demo"><b>Histórico legado encontrado.</b> O painel está lendo pedidos não demonstrativos do cadastro anterior enquanto as vendas normalizadas são registradas. A amostra atual é pequena, então os rankings são apenas um ponto de partida.</div>';
  if(!data)return header+'<div class="empty-analytics">'+(staffSession?'Carregando os indicadores do banco…':'Faça login como proprietária para carregar os dados reais de vendas.')+'</div>';
  var s=data.summary||{},dayArr=data.weekdays||[],top=data.top_products||[],daily=data.daily||[],hours=data.hours||[],comparison=data.comparison||{};
  var bestDay=dayArr.slice().sort(function(a,b){return Number(b.units_sold||0)-Number(a.units_sold||0)})[0];
@@ -290,7 +386,7 @@ function renderAnalyticsMarkup(){
  var revenue=Number(s.paid_revenue)||0,prevRevenue=Number(comparison.previous_paid_revenue)||0;
  var growth=prevRevenue>0?((revenue-prevRevenue)/prevRevenue*100):null;
  header+='<div class="analytics-kpis"><div class="analytics-kpi"><small>Faturamento pago</small><strong>'+money(revenue)+'</strong><span>Pedidos finalizados e pagos</span></div><div class="analytics-kpi"><small>Produtos vendidos</small><strong>'+Number(s.units_sold||0)+'</strong><span>Unidades em pedidos finalizados</span></div><div class="analytics-kpi"><small>Pedidos finalizados</small><strong>'+Number(s.completed_orders||0)+'</strong><span>'+Number(s.paid_orders||0)+' com pagamento confirmado</span></div><div class="analytics-kpi"><small>Ticket médio pago</small><strong>'+money(Number(s.average_paid_ticket)||0)+'</strong><span>Por pedido finalizado e pago</span></div></div>';
- if(empty)header+='<div class="empty-analytics"><b>Ainda não há vendas finalizadas no período selecionado.</b><br>O banco possui o catálogo, mas as tabelas relacionais de pedidos/itens ainda precisam receber pedidos reais. Por isso, o sistema não aponta dia nem produto campeão até que haja dados suficientes.</div>';
+ if(empty)header+='<div class="empty-analytics"><b>Ainda não há unidades de produtos em pedidos finalizados no período selecionado.</b><br>O sistema não inventa um dia ou produto campeão. Registre e finalize vendas para começar a comparação.</div>';
  var maxWeek=Math.max(1,...dayArr.map(function(x){return Number(x.units_sold)||0}));
  var maxProd=Math.max(1,...top.map(function(x){return Number(x.units_sold)||0}));
  var maxDay=Math.max(1,...daily.map(function(x){return Number(x.units_sold)||0}));
