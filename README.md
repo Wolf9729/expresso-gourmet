@@ -1,151 +1,75 @@
-# Expresso Gourmet — reconstrução mobile-first
+# Expresso Gourmet — sistema operacional
 
-Aplicação Next.js + React + TypeScript para o cardápio público e operação da lanchonete Expresso Gourmet, na UNINTA em Tianguá/CE. A entrega atual concentra-se no cardápio, pedidos para retirada no balcão, fila administrativa, catálogo, configurações básicas da loja e gestão de acessos.
+Cardápio digital mobile-first e painel de operação da lanchonete Expresso Gourmet, na UNINTA em Tianguá/CE. O atendimento online ativo é **somente retirada no balcão**.
 
-## Atendimento definido
+## Aplicação
 
-O único método de atendimento ativo nesta versão é **retirada no balcão**. Entrega fica desabilitada no frontend, na API e nas regras de pedido do banco.
+- `index.html`: entrada principal do site estático servido pela Vercel.
+- `presentation/index.html`: mesmo arquivo de aplicação, mantido para preservar o endereço anterior de apresentação.
+- `supabase/functions/pickup-order/index.ts`: endpoint de checkout real, com validação do servidor, idempotência, limite de requisições e confirmação de preços/disponibilidade no banco.
+- `supabase/functions/staff-admin/index.ts`: convite de funcionários, permitido apenas para a proprietária autenticada.
+- `supabase/migrations/`: alterações aditivas e controles de segurança registrados no repositório.
 
-## Funcionalidades nesta base
+Não existe mais um caminho de checkout que crie vendas fictícias. A aplicação não inclui produtos de amostra nem gráficos preenchidos com números inventados. Se o banco não responder, o cardápio mostra o erro e não simula um pedido.
 
-- Cardápio público com busca, filtros por categoria, sacola e checkout mobile.
-- Checkout envia apenas produto/quantidade e dados básicos. O banco recalcula preço, disponibilidade, total e desconto validado.
-- Idempotência no pedido para impedir duplicação acidental em retries de rede.
-- Número e código de retirada; consulta de status exige uma chave privada que não é persistida em texto puro.
-- Painel responsivo com login Supabase Auth, área de visão geral, fila de pedidos, catálogo, configurações da loja e equipe.
-- Permissões distintas: proprietária pode administrar catálogo/configurações/equipe; funcionário pode conduzir a operação e alternar disponibilidade conforme autorizado.
-- Eventos Supabase Realtime para pedidos, alerta visual de novo pedido e som opcional ativado pelo usuário; polling de recuperação quando Realtime não estiver disponível.
-- Página de acompanhamento do pedido, com atualização periódica.
-- Catálogo público com cache CDN de até 30 segundos e stale-while-revalidate; nenhum custo nem dado financeiro é retornado.
-- Migração proposta para importar 63 produtos/custos e o pedido legado para tabelas relacionais, mantendo o JSONB anterior como backup de reconciliação.
-- Índices de filas, contadores de painel via RPC e controle distribuído de limite de checkout via PostgreSQL, após migration 002.
+## Fluxo do cliente
 
-## O que ainda está fora da entrega
+1. O navegador carrega os produtos e configurações publicadas em `expresso_public_catalog`.
+2. A sacola mantém somente a seleção local até o cliente enviar o formulário.
+3. O navegador envia produtos/quantidades para a Edge Function `pickup-order`; não envia preços confiáveis.
+4. A função valida campos, origem, limite de requisições, disponibilidade e configurações da loja. O banco calcula o preço final a partir de `products`.
+5. Quando o banco registra o pedido, o cliente recebe o número e o código de retirada. A consulta de acompanhamento retorna somente estado do pedido, sem expor dados pessoais.
+6. A equipe confirma a retirada e o pagamento no painel. Escolher “Pix” ou “dinheiro” não marca automaticamente a venda como paga.
 
-- Upload de fotos diretamente pelo painel (os arquivos já extraídos ficam em `public/menu-images/`; por enquanto, o formulário usa caminhos locais ou URLs HTTPS).
-- Gestão completa de cursos/alunos/campanhas e validação de descontos no checkout novo.
-- Relatórios financeiros completos, metas e gráficos históricos.
-- Integração automática WhatsApp Business/webhook (o link de WhatsApp não prova envio nem retorno automático ao banco).
-- Integração com gateway de pagamento; forma escolhida no checkout é uma preferência e fica pendente até confirmação da equipe.
-- Teste de carga e publicação de produção.
+## Login e permissões
 
-## Requisitos e instalação
+Há uma única tela de login por e-mail e senha via Supabase Auth. O papel vem de `profiles.role` e o acesso exige `profiles.active = true`; o navegador não pode escolher a própria função.
 
-- Node.js 20.9 ou superior; recomenda-se LTS.
-- Acesso ao projeto Supabase correto e backup aprovado antes da migração.
+- **Proprietária:** análise de vendas, catálogo, preço, custos, parâmetros da loja, pagamentos e equipe.
+- **Funcionários:** fila de pedidos, atualizações de preparo/retirada e disponibilidade dos produtos. O dashboard financeiro e a edição de custos ficam restritos à proprietária.
+- **Equipe:** convites por e-mail usam a Edge Function `staff-admin`; cada pessoa deve usar sua conta individual.
 
-No Windows:
+## Dashboard de vendas
 
-1. Extraia o ZIP e abra um terminal na pasta do projeto.
-2. Execute `npm install`.
-3. Copie `.env.example` para `.env.local`.
-4. Configure as variáveis do ambiente.
-5. Execute `npm run dev` e abra `http://localhost:3000`.
+O painel usa `get_sales_dashboard(p_from, p_to)`, com períodos de 7, 30, 90 e 180 dias e fuso horário `America/Fortaleza`. A função agora recusa chamadas de funcionários e exige papel de proprietária ativa.
 
-### Variáveis de ambiente
+- Dia da semana, data e horário são agrupados a partir de pedidos finalizados.
+- Ranking de produtos usa quantidade e valores que foram gravados nos itens do pedido.
+- O faturamento recebido só soma pedidos finalizados com `payment_status = 'paid'`.
+- A comparação com o período anterior usa o mesmo intervalo de dias.
+- Sem histórico suficiente, o painel mostra falta de dados em vez de inventar vencedores.
 
-- `NEXT_PUBLIC_SUPABASE_URL`: URL do projeto Supabase.
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: chave publicável/anon do mesmo projeto; o browser usa-a apenas com RLS e para autenticação.
-- `SUPABASE_SERVICE_ROLE_KEY`: segredo exclusivamente server-side. Nunca usar `NEXT_PUBLIC_`, nunca comitar e nunca expor no browser.
-- `PICKUP_TOKEN_SECRET`: segredo estável aleatório, mínimo 32 caracteres, usado para derivar o token privado do pedido.
-- `NEXT_PUBLIC_DEMO_MODE`: deixe `false` em produção. `true` habilita um catálogo demonstrativo e bloqueia o checkout real se a API falhar.
+## Banco de dados e migrações
 
-Não reutilize credenciais de outro ambiente. As chaves reais não estão incluídas neste pacote.
+As migrações novas preservam o estado JSONB legado como arquivo de recuperação, importam os registros para tabelas relacionais e evitam sobrescrever dados normalizados em reexecuções:
 
-## Migrations
+1. `20261016141000_normalize_live_catalog_and_checkout.sql` — produtos, custos, pedido legado, limite compartilhado do checkout e catálogo derivado dos produtos relacionais.
+2. `20261016142000_backfill_legacy_cost_snapshots.sql` — completa o custo histórico do item legado sem alterar seu preço registrado.
+3. `20261016143000_owner_product_admin_functions.sql` — operações transacionais de produto/custo, configurações e acessos.
+4. `20261016144000_transactional_payment_confirmation.sql` — atualização transacional do pagamento.
+5. `20261016145000_sales_dashboard_owner_only.sql` — restringe o dashboard financeiro à proprietária.
+6. `20261016150000_restrict_direct_order_mutations.sql` — restringe inserções/alterações diretas de itens e pagamentos; a aplicação usa as funções transacionais aprovadas.
 
-As migrations precisam ser revisadas, testadas em branch/ambiente isolado e aplicadas na ordem:
+### Estado conferido após a migração
 
-1. `supabase/migrations/202610160001_normalize_menu_and_pickup_orders.sql`
-   - adiciona IDs legados e campos do fluxo de retirada;
-   - importa os campos públicos dos produtos e custos em tabela privada;
-   - reconcilia pedido(s) legado(s), mantendo pagamento pendente até confirmação;
-   - cria RPCs transacionais para criar, consultar e atualizar pedidos;
-   - preserva o JSONB original para rollback/reconciliação.
-2. `supabase/migrations/202610160002_admin_realtime_rate_limits.sql`
-   - cria índices voltados à fila e às consultas do painel;
-   - adiciona a tabela `orders` à publicação Realtime quando disponível;
-   - cria limitador de checkout compartilhado entre instâncias Vercel;
-   - cria RPC de contadores do painel;
-   - cria a RPC `admin_save_product`, que grava catálogo e custo unitário na mesma transação.
+- 63 produtos na tabela relacional e no catálogo público.
+- 63 custos de produto.
+- 1 pedido histórico importado e 1 item.
+- 1 registro de pagamento legado, ainda **pendente** porque não havia confirmação explícita de recebimento.
+- O histórico JSONB continua preservado.
 
-**Não aplique direto no banco de produção sem backup/revisão.** A versão HTML antiga ainda pode gravar no estado JSONB sem dual-write para tabelas relacionais. A migração de produção só deve ocorrer durante uma janela coordenada de corte para o novo site, após validar o ambiente de teste. O estado JSONB original não deve ser apagado pela migração.
+O pedido legado de R$ 27,00 não conta como faturamento pago até a equipe confirmar o pagamento. Os dados atuais ainda são insuficientes para concluir quais dias ou produtos realmente vendem mais; os rankings tornam-se confiáveis conforme pedidos reais forem finalizados e os pagamentos confirmados.
 
-Confira `docs/05-VERIFICACAO-POS-MIGRACAO.sql` para consultas de verificação pós-migração e compare quantidades, preços, custos e pedidos com o backup.
+## Verificação
 
-## API v1
+O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as duas entradas HTML, a presença das integrações reais e a ausência dos antigos geradores de demonstração.
 
-Contrato detalhado em `docs/openapi.yaml`.
+Antes de anunciar a operação em produção, ainda é necessário fazer uma compra controlada autorizada pelo estabelecimento, com pagamento e retirada reais. Não crie pedidos fictícios no banco de produção só para verificar a interface.
 
-Público:
+## Segurança e publicação
 
-- `GET /api/v1/catalog`
-- `POST /api/v1/orders`
-- `GET /api/v1/orders/status?pickupCode=...` com `x-order-access-token`
-
-Com sessão autorizada:
-
-- `GET /api/v1/orders` — fila paginada, filtro e contadores.
-- `PATCH /api/v1/orders/:id/status` — transições validadas e histórico.
-- `GET /api/v1/products` — catálogo administrativo e categorias.
-- `POST /api/v1/products` — criar produto (proprietária).
-- `PATCH /api/v1/products/:id` — proprietária edita; funcionário só alterna disponibilidade.
-- `DELETE /api/v1/products/:id` — arquivamento lógico (proprietária).
-- `GET /api/v1/settings`, `PATCH /api/v1/settings` — leitura por equipe, edição pela proprietária.
-- `GET /api/v1/team`, `POST /api/v1/team`, `PATCH /api/v1/team/:id` — gestão de equipe pela proprietária.
-
-O CRUD administrativo usa servidor/API e verifica perfil ativo e função antes das operações. O checkout depende das migrations: sem conexão e funções SQL, ele deve apresentar erro e não fingir que registrou o pedido.
-
-## Atualizações e escalabilidade
-
-- Pedidos usam eventos Supabase Realtime para atualização rápida; polling é somente recuperação (45 s conectado, 8 s em estado degradado), além de atualização quando a aba volta ao foco.
-- O painel busca lotes limitados (80 pedidos e um item sentinela para saber se há próxima página), evitando `count: exact` a cada evento.
-- RPC de estatísticas agrega os quatro indicadores principais em uma chamada.
-- O Realtime transmite somente eventos do cabeçalho do pedido; o painel consulta itens e dados completos pela API após o evento, reduzindo tráfego e duplicação de atualizações.
-- A edição de preço e custo unitário é feita em uma função transacional para impedir que o catálogo seja atualizado sem o custo privado correspondente.
-- Rate limit compartilhado no PostgreSQL limita checkout por janela entre instâncias serverless; há também um limite de melhor esforço por instância como proteção adicional.
-- Catálogo usa cache CDN curto; atualizações de preço/disponibilidade podem levar até cerca de 30 s a refletir em caches públicos, enquanto a criação do pedido revalida a disponibilidade/preço diretamente no banco.
-- Índices favorecem filas por status/data, itens por pedido e produtos por categoria/ordem.
-
-Isso prepara o sistema para escala, mas **não substitui teste de carga**. A capacidade real depende do plano e configuração do Supabase/Vercel, tamanho do catálogo, conexões Realtime e padrão de uso.
-
-## Testes e validação
-
-Depois de instalar dependências:
-
-```bash
-npm run check:static
-npm run lint
-npm run build
-```
-
-A verificação estática local testa a sintaxe dos TS/TSX, JSON/YAML, arquivos referenciados e marcadores básicos de segurança/arquitetura. Ela não substitui o build, testes de integração ou teste de carga.
-
-Teste em celulares reais: acesso público sem login, sacola, checkout, retry idempotente, preço revalidado, código de retirada, acompanhamento, login de proprietário e funcionário, permissões, Realtime, fallback de polling, disponibilidade, configurações e persistência após refresh/outro dispositivo.
-
-## Estado desta entrega
-
-O código foi estruturado localmente e passou por verificação de sintaxe TypeScript/TSX antes do empacotamento. **A migration não foi aplicada ao Supabase, não houve deploy e o build completo depende da instalação das dependências**, que não foi concluída neste ambiente. A conta Vercel conectada retornou erro de autorização para inspecionar logs e validar o site real; será necessário corrigir esse acesso para concluir a publicação e auditoria operacional.
-
-## GitHub + Vercel + Supabase
-
-Veja `docs/07-GITHUB-VERCEL-SUPABASE.md` para conectar o repositório privado ao projeto Vercel existente e cadastrar variáveis de ambiente com segurança. A CI em `.github/workflows/ci.yml` verifica estática, lint e build, mas não aplica migrations automaticamente.
-
-**Importante:** o banco Supabase remoto contém migrations históricas cujos arquivos ainda não foram recuperados para este repositório. Reconciliar as 17 migrations históricas antes de usar a CLI para aplicar mudanças; não habilitar deploy de schema automático em produção enquanto isso não estiver resolvido.
-
-### Publicar o primeiro commit no GitHub (Windows)
-
-Depois de criar um repositório privado vazio no GitHub, abra PowerShell na raiz e execute:
-
-```powershell
-./scripts/publish-to-github.ps1 -RepositoryUrl "https://github.com/SEU_USUARIO/expresso-gourmet.git"
-```
-
-O script usa as credenciais do Git Credential Manager, não inclui tokens no comando e não força o push se o remoto tiver histórico diferente. Leia `docs/07-GITHUB-VERCEL-SUPABASE.md` antes de conectar o repositório à Vercel e alterar o banco.
-
-
-## Apresentação visual — pedido e área da equipe
-
-Abra [`presentation/index.html`](./presentation/index.html) para ver o cardápio, a sacola, o checkout demonstrativo, a fila da equipe, as etapas do pedido e as permissões ilustrativas da proprietária e do funcionário. A página consulta somente leitura o catálogo público `expresso_public_catalog` do Supabase usando uma chave publicável; se a consulta não for permitida no navegador, usa dados de fallback.
-
-**Importante:** o checkout desta apresentação é apenas demonstrativo. Ele não cria pedidos reais nem grava alterações de pedidos, disponibilidade, equipe ou configurações no Supabase. A conexão Git da Vercel e a configuração de variáveis de ambiente ainda dependem de autorização para o escopo Vercel `alysson-projects1`; não publicar esta página sobre produção como se fosse a aplicação completa.
+- A chave publicável do Supabase pode aparecer no frontend; a proteção depende das políticas RLS e das funções validadas.
+- Nunca coloque `service_role` nem chaves secretas em `index.html`, `.env.example` ou GitHub. As Edge Functions usam o segredo de servidor no ambiente do Supabase.
+- O código está na branch `main` de [Wolf9729/expresso-gourmet](https://github.com/Wolf9729/expresso-gourmet).
+- O projeto Vercel existente foi usado para previews por upload direto; o vínculo de deploy automático via GitHub ainda precisa ser concluído sem trocar o domínio atual inadvertidamente.
+- O plano atual do Supabase não permite criar branch de banco, então não foi possível executar um clone isolado antes da migração. As migrações aplicadas foram aditivas e verificadas com consultas de contagem e integridade.
