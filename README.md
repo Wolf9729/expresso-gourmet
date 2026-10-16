@@ -8,6 +8,7 @@ Cardápio digital mobile-first e painel de operação da lanchonete Expresso Gou
 - `presentation/index.html`: mesmo arquivo de aplicação, mantido para preservar o endereço anterior de apresentação.
 - `supabase/functions/pickup-order/index.ts`: endpoint de checkout real, com validação do servidor, idempotência, limite de requisições e confirmação de preços/disponibilidade no banco.
 - `supabase/functions/staff-admin/index.ts`: convite de funcionários, permitido apenas para a proprietária autenticada.
+- A fila da equipe recebe eventos PostgreSQL Realtime apenas após o login; a consulta periódica funciona como recuperação se o socket ou o CDN falhar.
 - `supabase/migrations/`: alterações aditivas e controles de segurança registrados no repositório.
 
 Não existe mais um caminho de checkout que crie vendas fictícias. A aplicação não inclui produtos de amostra nem gráficos preenchidos com números inventados. Se o banco não responder, o cardápio mostra o erro e não simula um pedido.
@@ -49,6 +50,7 @@ As migrações novas preservam o estado JSONB legado como arquivo de recuperaç�
 4. `20261016144000_transactional_payment_confirmation.sql` — atualização transacional do pagamento.
 5. `20261016145000_sales_dashboard_owner_only.sql` — restringe o dashboard financeiro à proprietária.
 6. `20261016150000_restrict_direct_order_mutations.sql` — restringe inserções/alterações diretas de itens e pagamentos; a aplicação usa as funções transacionais aprovadas.
+7. `20261016152000_enable_order_realtime.sql` — inclui `orders` na publicação Realtime para acelerar a fila da equipe.
 
 ### Estado conferido após a migração
 
