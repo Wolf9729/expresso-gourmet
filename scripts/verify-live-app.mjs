@@ -17,7 +17,7 @@ check(rootHtml === nestedHtml, "root index.html and presentation entrypoint are 
 check(rootHtml === publicHtml, "public legacy entrypoint has no stale demo copy");
 check(/<!doctype html/i.test(rootHtml), "HTML document declaration exists");
 
-const scriptElements = [...rootHtml.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)];
+const scriptElements = [...rootHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
 const scripts = scriptElements.filter((match) => match[1].trim().length > 0);
 check(scripts.length === 1, "exactly one inline application script exists");
 check(rootHtml.includes("supabase-js@2.110.0/dist/umd/supabase.js"), "pinned Supabase Realtime client is loaded");
