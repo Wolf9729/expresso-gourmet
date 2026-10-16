@@ -1,0 +1,14 @@
+{
+  "name": "Expresso Gourmet",
+  "short_name": "Expresso",
+  "description": "Cardápio digital e pedidos para retirada no balcão da Expresso Gourmet, na UNINTA em Tianguá.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#fbf8f1",
+  "theme_color": "#173c32",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
