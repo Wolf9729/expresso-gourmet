@@ -12,7 +12,9 @@ function check(condition, label) {
 
 const rootHtml = readFileSync(join(root, "index.html"), "utf8");
 const nestedHtml = readFileSync(join(root, "presentation", "index.html"), "utf8");
+const publicHtml = readFileSync(join(root, "public", "presentation", "index.html"), "utf8");
 check(rootHtml === nestedHtml, "root index.html and presentation entrypoint are identical");
+check(rootHtml === publicHtml, "public legacy entrypoint has no stale demo copy");
 check(/<!doctype html/i.test(rootHtml), "HTML document declaration exists");
 
 const scripts = [...rootHtml.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
