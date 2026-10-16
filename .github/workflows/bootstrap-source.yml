@@ -28,11 +28,11 @@ jobs:
             exit 0
           fi
           mapfile -t parts < <(find .bootstrap -maxdepth 1 -type f -name 'source-*.b64' -print | sort)
-          if [[ "${#parts[@]}" -ne 12 ]]; then
-            echo "Expected 12 archive parts; found ${#parts[@]}" >&2
+          if [[ "${#parts[@]}" -ne 10 ]]; then
+            echo "Expected 10 archive parts; found ${#parts[@]}" >&2
             exit 1
           fi
-          cat "${parts[@]}" | base64 --decode | tar -xz --no-same-owner -C .
+          cat "${parts[@]}" | base64 --decode | tar -xJ --no-same-owner -C .
           rm -f .bootstrap/source-*.b64 .bootstrap/READY
           rmdir .bootstrap || true
           rm -f .github/workflows/bootstrap-source.yml
