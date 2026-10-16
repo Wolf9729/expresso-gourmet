@@ -111,7 +111,7 @@ function toast(s){var e=document.getElementById('toast');e.textContent=s;e.class
 function show(v){document.querySelectorAll('.view').forEach(function(e){e.classList.toggle('active',e.id==='view-'+v)});document.querySelectorAll('[data-view]').forEach(function(e){e.classList.toggle('active',e.dataset.view===v)});if(v==='checkout')renderCheckout();if(v==='team')renderAdmin();window.scrollTo({top:0,behavior:'smooth'})}
 document.querySelectorAll('[data-view]').forEach(function(b){b.onclick=function(){show(b.dataset.view)}});
 function remoteImage(v){var k=String(v||'').replace('img:','');var map={coxinha:demo[0].image,empada:demo[1].image,prato:demo[2].image,prato_feito:demo[2].image,panqueca:demo[3].image,cafe:demo[4].image,combo_intervalo:demo[5].image,suco:demo[5].image,cheese:demo[1].image,coca:demo[5].image,torta_frango:demo[1].image};return map[k]||demo[0].image}
-async async function loadCatalog(){var s=document.getElementById('db-status');try{var ctrl=new AbortController(),timer=setTimeout(function(){ctrl.abort()},5000);var r=await fetch(URL+'/rest/v1/expresso_public_catalog?id=eq.true&select=payload',{headers:{apikey:KEY,Accept:'application/json'},signal:ctrl.signal});clearTimeout(timer);if(!r.ok)throw Error('HTTP '+r.status);var body=await r.json(),raw=body&&body[0]&&body[0].payload&&body[0].payload.products;if(!Array.isArray(raw)||!raw.length)throw Error('catálogo indisponível');products=raw.filter(function(p){return !(p.active===false||String(p.active).toLowerCase()==='false'||p.available===false||String(p.available).toLowerCase()==='false')}).map(function(p){return {id:String(p.id),name:String(p.name),description:String(p.description||''),category:({'Almoços':'Almoço','Jantas':'Jantar','Sobremesas':'Doces'}[p.category]||p.category||'Outros'),price:Number(p.price)||0,promoPrice:p.promoPrice==null?null:Number(p.promoPrice),image:remoteImage(p.image),featured:p.featured===true||String(p.featured)==='true'}});live=true;s.classList.add('ok');s.textContent='Catálogo Supabase';document.getElementById('catalog-note').textContent=products.length+' produtos carregados do catálogo público. A gravação de pedidos precisa estar habilitada no checkout operacional.'}catch(e){s.classList.remove('ok');s.textContent='Catálogo de demonstração';document.getElementById('catalog-note').textContent='Não foi possível acessar o catálogo aqui; foram carregados produtos de exemplo.'}renderFilters();renderProducts();renderAdmin()}
+async function loadCatalog(){var s=document.getElementById('db-status');try{var ctrl=new AbortController(),timer=setTimeout(function(){ctrl.abort()},5000);var r=await fetch(URL+'/rest/v1/expresso_public_catalog?id=eq.true&select=payload',{headers:{apikey:KEY,Accept:'application/json'},signal:ctrl.signal});clearTimeout(timer);if(!r.ok)throw Error('HTTP '+r.status);var body=await r.json(),raw=body&&body[0]&&body[0].payload&&body[0].payload.products;if(!Array.isArray(raw)||!raw.length)throw Error('catálogo indisponível');products=raw.filter(function(p){return !(p.active===false||String(p.active).toLowerCase()==='false'||p.available===false||String(p.available).toLowerCase()==='false')}).map(function(p){return {id:String(p.id),name:String(p.name),description:String(p.description||''),category:({'Almoços':'Almoço','Jantas':'Jantar','Sobremesas':'Doces'}[p.category]||p.category||'Outros'),price:Number(p.price)||0,promoPrice:p.promoPrice==null?null:Number(p.promoPrice),image:remoteImage(p.image),featured:p.featured===true||String(p.featured)==='true'}});live=true;s.classList.add('ok');s.textContent='Catálogo Supabase';document.getElementById('catalog-note').textContent=products.length+' produtos carregados do catálogo público. A gravação de pedidos precisa estar habilitada no checkout operacional.'}catch(e){s.classList.remove('ok');s.textContent='Catálogo de demonstração';document.getElementById('catalog-note').textContent='Não foi possível acessar o catálogo aqui; foram carregados produtos de exemplo.'}renderFilters();renderProducts();renderAdmin()}
 function renderFilters(){var cats=['Todos'].concat([...new Set(products.map(function(p){return p.category}))]);document.getElementById('filters').innerHTML=cats.map(function(c){return '<button class="chip '+(filter===c?'active':'')+'" data-category="'+esc(c)+'">'+esc(c)+'</button>'}).join('');document.querySelectorAll('[data-category]').forEach(function(b){b.onclick=function(){filter=b.dataset.category;renderFilters();renderProducts()}})}
 function renderProducts(){
  var searchEl=document.getElementById('search'),q=searchEl?searchEl.value.toLowerCase():'';
@@ -138,8 +138,40 @@ function renderProducts(){
 function renderCartCount(){var el=document.getElementById('cart-count');if(el)el.textContent=cart.size?'('+[...cart.values()].reduce(function(a,x){return a+x.q},0)+')':'';}
 
 document.getElementById('search').oninput=renderProducts;document.getElementById('sort-products').onchange=renderProducts;
-function renderCheckout(){var lines=document.getElementById('cart-lines'),totalEl=document.getElementById('cart-total');if(!cart.size){lines.innerHTML='<p class="muted">Sua sacola está vazia. <button class="btn soft" onclick="show(\\'menu\\')">Ver cardápio</button></p>';totalEl.innerHTML='';return}var total=0;lines.innerHTML=[...cart.values()].map(function(row){var p=row.p,q=row.q,price=p.promoPrice&&p.promoPrice<p.price?p.promoPrice:p.price;total+=price*q;return '<div class="line"><img src="'+esc(p.image)+'" alt=""><div><b>'+esc(p.name)+'</b><small>'+money(price)+' por unidade</small><div class="qty"><button data-q="-1" data-id="'+esc(p.id)+'">−</button>'+q+'<button data-q="1" data-id="'+esc(p.id)+'">+</button></div></div><b>'+money(price*q)+'</b></div>'}).join('');totalEl.innerHTML='<div class="total"><span>Total estimado</span><span>'+money(total)+'</span></div>';document.querySelectorAll('[data-q]').forEach(function(b){b.onclick=function(){var i=cart.get(b.dataset.id);i.q+=Number(b.dataset.q);if(i.q<=0)cart.delete(b.dataset.id);renderCheckout()}})}
-document.getElementById('checkout-form').onsubmit=function(e){e.preventDefault();if(!cart.size){toast('Adicione um item antes de confirmar.');return}var total=0,items=[];for(var row of cart.values()){var price=row.p.promoPrice&&row.p.promoPrice<row.p.price?row.p.promoPrice:row.p.price;total+=price*row.q;items.push([row.p.name,row.q])}var n=++orderNumber,code='EG-'+Math.floor(1000+Math.random()*9000);newOrder={id:'local'+Date.now(),n:n,name:document.getElementById('customer').value.trim(),phone:document.getElementById('phone').value.trim(),status:'new',total:total,items:items,code:code,demo:true};orders.unshift(newOrder);cart.clear();document.getElementById('checkout-layout').classList.add('hidden');document.getElementById('ticket').classList.remove('hidden');document.getElementById('ticket-desc').textContent='Olá, '+newOrder.name+'. Este pedido foi criado somente para demonstração.';document.getElementById('ticket-code').textContent=code;document.getElementById('ticket-total').textContent='Total de demonstração: '+money(total);renderAdmin();toast('Pedido demonstrativo criado na fila.')};
+function renderCheckout(){
+ var lines=document.getElementById('cart-lines'),totalEl=document.getElementById('cart-total');
+ if(!cart.size){
+  lines.innerHTML='<p class="muted">Sua sacola está vazia.</p><button class="btn soft" type="button" id="checkout-back-menu">Ver cardápio</button>';
+  totalEl.innerHTML='';
+  var back=document.getElementById('checkout-back-menu');if(back)back.onclick=function(){show('menu')};
+  return;
+ }
+ var total=0;
+ lines.innerHTML=[...cart.values()].map(function(row){
+  var p=row.p,q=row.q,price=p.promoPrice&&p.promoPrice<p.price?p.promoPrice:p.price;total+=price*q;
+  return '<div class="line"><img src="'+esc(p.image)+'" alt=""><div><b>'+esc(p.name)+'</b><small>'+money(price)+' por unidade</small><div class="qty"><button type="button" data-q="-1" data-id="'+esc(p.id)+'">−</button>'+q+'<button type="button" data-q="1" data-id="'+esc(p.id)+'">+</button></div></div><b>'+money(price*q)+'</b></div>';
+ }).join('');
+ totalEl.innerHTML='<div class="total"><span>Total estimado</span><span>'+money(total)+'</span></div><p class="muted">O preço final será validado no registro do pedido. Retirada no balcão da UNINTA.</p>';
+ document.querySelectorAll('[data-q]').forEach(function(button){button.onclick=function(){
+  var row=cart.get(button.dataset.id);if(!row)return;row.q+=Number(button.dataset.q);if(row.q<=0)cart.delete(button.dataset.id);renderCheckout();renderCartCount();
+ }});
+}
+document.getElementById('checkout-form').onsubmit=function(e){
+ e.preventDefault();
+ if(!cart.size){toast('Adicione um item antes de confirmar.');return}
+ var total=0,items=[];
+ for(var row of cart.values()){
+  var price=row.p.promoPrice&&row.p.promoPrice<row.p.price?row.p.promoPrice:row.p.price;
+  total+=price*row.q;items.push([row.p.name,row.q]);
+ }
+ var n=++orderNumber,code='EG-'+Math.floor(1000+Math.random()*9000);
+ newOrder={id:'local'+Date.now(),n:n,name:document.getElementById('customer').value.trim(),phone:document.getElementById('phone').value.trim(),status:'new',total:total,items:items,code:code,demo:true,notes:document.getElementById('notes').value.trim(),payment:document.getElementById('payment').value};
+ orders.unshift(newOrder);cart.clear();renderCartCount();
+ document.getElementById('checkout-layout').classList.add('hidden');document.getElementById('ticket').classList.remove('hidden');
+ document.getElementById('ticket-desc').textContent='Olá, '+newOrder.name+'. Este pedido foi criado somente para demonstração; não foi gravado no banco.';
+ document.getElementById('ticket-code').textContent=code;document.getElementById('ticket-total').textContent='Total demonstrativo: '+money(total);
+ renderAdmin();toast('Pedido demonstrativo criado na fila.');
+};
 function backToMenu(){newOrder=null;document.getElementById('checkout-layout').classList.remove('hidden');document.getElementById('ticket').classList.add('hidden');show('menu')}
 var st={new:'Novo pedido',confirmed:'Confirmado',preparing:'Em preparo',ready:'Pronto para retirar',completed:'Finalizado'},next={new:['confirmed','Confirmar pedido'],confirmed:['preparing','Iniciar preparo'],preparing:['ready','Marcar pronto'],ready:['completed','Finalizar retirada']};
 async function advance(id){
@@ -291,7 +323,11 @@ function startLiveRefresh(){
   try{await loadLiveOrders();}catch(e){console.warn('Atualização automática de pedidos falhou:',e&&e.message);}
  },8000);
 }
-function qcard(o){var n=next[o.status];return '<article class="qcard"><div class="qtop"><div><small class="qnum">PEDIDO #'+String(o.n).padStart(5,'0')+'</small><h3>'+esc(o.name)+'</h3><small class="muted">'+esc(o.phone)+' · Retirada no balcão</small></div><span class="badge '+o.status+'">'+st[o.status]+'</span></div><p>'+o.items.map(function(x){return x[1]+'× '+esc(x[0])}).join('<br>')+'</p><div class="qfoot"><strong>'+money(o.total)+'</strong>'+(n?'<button onclick="advance(\\''+o.id+'\\')">'+n[1]+'</button>':'<span class="muted">Etapa concluída</span>')+'</div></article>'}
+function qcard(o){
+ var transition=next[o.status];
+ var created=o.createdAt?new Date(o.createdAt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Demonstração';
+ return '<article class="qcard"><div class="qtop"><div><small class="qnum">PEDIDO #'+String(o.n).padStart(5,'0')+'</small><h3>'+esc(o.name)+'</h3><small class="muted">'+esc(o.phone)+' · '+esc(created)+' · Retirada no balcão</small></div><span class="badge '+esc(o.status)+'">'+esc(st[o.status]||o.status)+'</span></div><p>'+((o.items||[]).map(function(x){return x[1]+'× '+esc(x[0])}).join('<br>')||'Itens não detalhados')+'</p><div class="qfoot"><strong>'+money(o.total)+'</strong>'+(transition?'<button type="button" data-advance="'+esc(o.id)+'">'+transition[1]+'</button>':'<span class="muted">Etapa concluída</span>')+'</div></article>';
+}
 function renderAdmin(){
  var el=document.getElementById('admin-content');if(!el)return;
  if(!staffSession&&!isDemoMode){el.innerHTML='';return;}
@@ -311,6 +347,7 @@ function renderAdmin(){
  else if(panel==='settings'&&role==='owner')h='<div class="welcome"><div><h2>Configurações</h2><p class="muted">Parâmetros operacionais da loja.</p></div></div>'+note+'<div class="box"><h3>Aceitar pedidos</h3><p>Retirada no balcão é a única modalidade ativa nesta versão.</p><button class="btn" onclick="accept=!accept;toast(accept?\'Pedidos ativados nesta demonstração\':\'Pedidos pausados nesta demonstração\');renderAdmin();renderProducts()">'+(accept?'Pausar recebimento':'Ativar recebimento')+'</button><div class="step"><b>Retirada no balcão</b><span>Ativa</span></div><div class="step"><b>Entrega</b><span>Desativada</span></div></div>';
  else if(panel==='team'&&role==='owner')h='<div class="welcome"><div><h2>Equipe e acessos</h2><p class="muted">Contas individuais e permissões por função.</p></div></div>'+note+'<div class="box"><h3>Sua sessão</h3><div class="member"><span class="avatar">'+esc((authDisplayName||'U').slice(0,1).toUpperCase())+'</span><div><b>'+esc(authDisplayName||'Proprietária')+'</b><small>'+(staffSession?'Perfil validado pelo Supabase Auth':'Perfil de apresentação')+'</small></div><span class="active-pill">'+(staffSession?'Ativo':'Demo')+'</span></div></div><div class="box"><h3>Permissões por função</h3><p><b>Proprietária:</b> pedidos, análise de vendas, cardápio, preços, custos, equipe e configurações.</p><p><b>Funcionário:</b> fila de pedidos e operação de retirada; indicadores financeiros e gestão de acessos ficam ocultos.</p><p class="muted">Contas reais devem ser criadas pelo fluxo administrativo do Supabase Auth e associadas a um perfil ativo. Não compartilhe a mesma senha entre pessoas.</p></div>';
  el.innerHTML=h;
+ el.querySelectorAll('[data-advance]').forEach(function(button){button.onclick=function(){advance(button.dataset.advance)}});
  if(panel==='analytics'){
   var sel=document.getElementById('analytics-period');if(sel)sel.onchange=function(){refreshAnalytics()};
  }
