@@ -218,7 +218,7 @@ async function signInStaff(e){
   document.getElementById('who').textContent=authDisplayName;document.getElementById('who-role').textContent=role==='owner'?'Proprietária':'Funcionário';
   setLoginFeedback('',false);document.getElementById('staff-password').value='';
   await loadLiveOrders();if(role==='owner')await loadLiveAnalytics(30);renderAdmin();startLiveRefresh();toast('Acesso validado. Bem-vindo(a), '+authDisplayName+'.');
- }catch(err){staffSession=null;ordersAreLive=false;setLoginFeedback(err&&err.message?err.message:'Não foi possível entrar. Tente novamente.',false);}
+ }catch(err){staffSession=null;ordersAreLive=false;setStaffScreen(false);setLoginFeedback(err&&err.message?err.message:'Não foi possível entrar. Tente novamente.',false);}
  finally{button.disabled=false;button.textContent='Entrar no painel ↗';}
 }
 async function loadLiveOrders(){
@@ -274,7 +274,7 @@ function renderAnalyticsMarkup(){
  var header='<div class="welcome"><div><h2>Análise de vendas</h2><p class="muted">Dias de maior saída, produtos líderes, receita paga e comportamento por horário.</p></div><span class="status '+(isDemo?'':'ok')+'">'+(isDemo?'● Dados ilustrativos':'● Supabase')+'</span></div>'+
  '<div class="analytics-toolbar"><div><span class="kicker-note">PERÍODO ANALISADO</span><br><span class="muted">'+period+' dias · fuso America/Fortaleza</span></div><div style="display:flex;gap:8px;align-items:center"><select id="analytics-period" aria-label="Período de análise"><option value="7" '+(period===7?'selected':'')+'>Últimos 7 dias</option><option value="30" '+(period===30?'selected':'')+'>Últimos 30 dias</option><option value="90" '+(period===90?'selected':'')+'>Últimos 90 dias</option><option value="180" '+(period===180?'selected':'')+'>Últimos 180 dias</option></select><button class="btn soft" type="button" onclick="refreshAnalytics()">Atualizar ↻</button></div></div>';
  if(isDemo)header+='<div class="demo"><b>Modo de apresentação.</b> Os números abaixo são inventados para demonstrar os gráficos e não representam as vendas reais da Expresso Gourmet.</div>';
- if(!data)return header+'<div class="empty-analytics">Faça login como proprietária para carregar os dados reais de vendas.</div>';
+ if(!data)return header+'<div class="empty-analytics">'+(staffSession?'Carregando os indicadores do banco…':'Faça login como proprietária para carregar os dados reais de vendas.')+'</div>';
  var s=data.summary||{},dayArr=data.weekdays||[],top=data.top_products||[],daily=data.daily||[],hours=data.hours||[],comparison=data.comparison||{};
  var bestDay=dayArr.slice().sort(function(a,b){return Number(b.units_sold||0)-Number(a.units_sold||0)})[0];
  var bestProduct=top[0],bestHour=hours.slice().sort(function(a,b){return Number(b.orders||0)-Number(a.orders||0)})[0];
