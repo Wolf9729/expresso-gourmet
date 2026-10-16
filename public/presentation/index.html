@@ -101,10 +101,12 @@
 </nav><div class="who"><b id="who">Equipe</b><small id="who-role">Perfil não autenticado</small></div></aside><div class="admin-content" id="admin-content"></div></div>
 </div></section>
 </main><footer class="foot"><div class="wrap">Expresso Gourmet · UNINTA, Tianguá/CE <span style="float:right">Retirada no balcão · UNINTA · Tianguá/CE</span></div></footer><div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0/dist/umd/supabase.js" crossorigin="anonymous"></script>
 <script>
 var URL='https://lmiyjmbedygqeyuzyznm.supabase.co',KEY='sb_publishable_EeOTLGqKv1oHVQ8-kIHjTQ_b_0HJpIh';
 var products=[],cart=new Map(),orders=[],role='owner',panel='overview',orderNumber=0,filter='Todos',live=false,accept=false,newOrder=null;
 var staffSession=null,analyticsData=null,analyticsDays=30,refreshTimer=null,authDisplayName='',ordersAreLive=false,productSort='featured',menuQuickFilter='all',teamProfiles=[],storeSettings=null,adminProducts=[],adminCategories=[],pickupStatusTimer=null,pendingPickupKey=null;
+var realtimeClient=null,orderRealtimeChannel=null,realtimeConnected=false,liveRefreshDebounce=null;
 var money=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
 var esc=s=>String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]});
 function toast(s){var e=document.getElementById('toast');e.textContent=s;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2300)}
@@ -310,7 +312,7 @@ async function signInStaff(e){
   document.getElementById('staff-session-pill').textContent='Autenticado pelo Supabase';
   document.getElementById('who').textContent=authDisplayName;document.getElementById('who-role').textContent=role==='owner'?'Proprietária':'Funcionário';
   setLoginFeedback('',false);document.getElementById('staff-password').value='';
-  await loadLiveOrders();if(role==='owner')await loadLiveAnalytics(30);renderAdmin();startLiveRefresh();toast('Acesso validado. Bem-vindo(a), '+authDisplayName+'.');
+  await loadLiveOrders();if(role==='owner')await loadLiveAnalytics(30);renderAdmin();startLiveRefresh();connectOrdersRealtime();toast('Acesso validado. Bem-vindo(a), '+authDisplayName+'.');
  }catch(err){staffSession=null;ordersAreLive=false;setStaffScreen(false);setLoginFeedback(err&&err.message?err.message:'Não foi possível entrar. Tente novamente.',false);}
  finally{button.disabled=false;button.textContent='Entrar no painel ↗';}
 }
@@ -440,6 +442,7 @@ function renderAnalyticsMarkup(){
  var bestDay=dayArr.slice().sort(function(a,b){return Number(b.units_sold||0)-Number(a.units_sold||0)})[0];
  var bestProduct=top[0],bestHour=hours.slice().sort(function(a,b){return Number(b.orders||0)-Number(a.orders||0)})[0];
  var empty=analyticsEmpty(data);
+ if(!empty&&(Number(s.completed_orders||0)<10||Number(s.units_sold||0)<30))header+='<div class="notice"><b>Histórico ainda curto.</b> Este período contém '+Number(s.completed_orders||0)+' pedidos finalizados e '+Number(s.units_sold||0)+' unidades. Os rankings são preliminares; continue registrando pedidos reais antes de usar esses números para dimensionar compras e produção.</div>';
  var revenue=Number(s.paid_revenue)||0,prevRevenue=Number(comparison.previous_paid_revenue)||0;
  var growth=prevRevenue>0?((revenue-prevRevenue)/prevRevenue*100):null;
  header+='<div class="analytics-kpis"><div class="analytics-kpi"><small>Faturamento pago</small><strong>'+money(revenue)+'</strong><span>Pedidos finalizados e pagos</span></div><div class="analytics-kpi"><small>Produtos vendidos</small><strong>'+Number(s.units_sold||0)+'</strong><span>Unidades em pedidos finalizados</span></div><div class="analytics-kpi"><small>Pedidos finalizados</small><strong>'+Number(s.completed_orders||0)+'</strong><span>'+Number(s.paid_orders||0)+' com pagamento confirmado</span></div><div class="analytics-kpi"><small>Ticket médio pago</small><strong>'+money(Number(s.average_paid_ticket)||0)+'</strong><span>Por pedido finalizado e pago</span></div></div>';
@@ -465,18 +468,73 @@ function renderAnalyticsMarkup(){
  return header;
 }
 function refreshAnalytics(){var select=document.getElementById('analytics-period');var days=select?Number(select.value):30;loadLiveAnalytics(days).catch(function(e){toast('Falha ao atualizar vendas: '+(e.message||'erro'));});}
+async function disconnectOrdersRealtime(){
+ realtimeConnected=false;
+ if(liveRefreshDebounce){clearTimeout(liveRefreshDebounce);liveRefreshDebounce=null;}
+ var client=realtimeClient,channel=orderRealtimeChannel;
+ realtimeClient=null;orderRealtimeChannel=null;
+ if(client&&channel){try{await client.removeChannel(channel);}catch(_){}}
+}
+function scheduleOrdersRealtimeRefresh(){
+ if(liveRefreshDebounce)clearTimeout(liveRefreshDebounce);
+ liveRefreshDebounce=setTimeout(async function(){
+  liveRefreshDebounce=null;
+  if(!staffSession)return;
+  try{
+   await loadLiveOrders();
+   if(role==='owner'&&panel==='analytics')await loadLiveAnalytics(analyticsDays);
+  }catch(error){console.warn('Sincronização de pedido falhou:',error&&error.message);}
+ },180);
+}
+function connectOrdersRealtime(){
+ if(!staffSession)return;
+ if(!window.supabase||typeof window.supabase.createClient!=='function'){
+  realtimeConnected=false;
+  var fallbackPill=document.getElementById('staff-session-pill');if(fallbackPill)fallbackPill.textContent='Sessão válida · sincronização periódica';
+  startLiveRefresh();return;
+ }
+ try{
+  if(realtimeClient&&orderRealtimeChannel){realtimeClient.removeChannel(orderRealtimeChannel).catch(function(){});orderRealtimeChannel=null;}
+  realtimeClient=window.supabase.createClient(URL,KEY,{
+   auth:{autoRefreshToken:false,persistSession:false,detectSessionInUrl:false},
+   realtime:{params:{eventsPerSecond:10}}
+  });
+  realtimeClient.realtime.setAuth(staffSession.access_token);
+  orderRealtimeChannel=realtimeClient.channel('expresso-orders-staff')
+   .on('postgres_changes',{event:'*',schema:'public',table:'orders'},function(){scheduleOrdersRealtimeRefresh();})
+   .subscribe(function(status,error){
+    var pill=document.getElementById('staff-session-pill');
+    if(status==='SUBSCRIBED'){
+     realtimeConnected=true;
+     if(pill)pill.textContent='Pedidos em tempo real';
+     startLiveRefresh();
+    }else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'||status==='CLOSED'){
+     realtimeConnected=false;
+     if(pill)pill.textContent='Sessão válida · sincronização periódica';
+     startLiveRefresh();
+     if(error)console.warn('Realtime indisponível; usando sincronização de reserva.');
+    }
+   });
+ }catch(error){
+  realtimeConnected=false;startLiveRefresh();
+  var pill=document.getElementById('staff-session-pill');if(pill)pill.textContent='Sessão válida · sincronização periódica';
+  console.warn('Não foi possível iniciar Realtime; usando sincronização de reserva.');
+ }
+}
 async function signOutStaff(){
  if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
+ await disconnectOrdersRealtime();
  var previous=staffSession;staffSession=null;ordersAreLive=false;analyticsData=null;
  if(previous&&previous.access_token){try{await fetch(URL+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+previous.access_token}});}catch(_){}}
  setStaffScreen(false);document.getElementById('staff-email').value='';document.getElementById('staff-password').value='';setLoginFeedback('Sessão encerrada.',true);role='owner';panel='overview';
 }
 function startLiveRefresh(){
  if(refreshTimer)clearInterval(refreshTimer);
+ var delay=realtimeConnected?30000:8000;
  refreshTimer=setInterval(async function(){
   if(!staffSession||document.hidden)return;
-  try{await loadLiveOrders();}catch(e){console.warn('Atualização automática de pedidos falhou:',e&&e.message);}
- },8000);
+  try{await loadLiveOrders();if(role==='owner'&&panel==='analytics')await loadLiveAnalytics(analyticsDays);}catch(e){console.warn('Atualização automática de pedidos falhou:',e&&e.message);}
+ },delay);
 }
 function qcard(o){
  var transition=next[o.status];
