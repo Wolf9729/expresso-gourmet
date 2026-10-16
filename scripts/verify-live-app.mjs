@@ -44,6 +44,9 @@ for (const [fragment, label] of [
   ["/functions/v1/staff-admin", "employee invitations use the protected staff endpoint"],
   ["set_order_payment_status", "payment confirmation uses a transactional RPC"],
   ["set_product_availability", "product availability changes use a database RPC"],
+  ["connectOrdersRealtime", "staff queue initializes authenticated Realtime"],
+  ["postgres_changes", "staff queue listens for database order events"],
+  ["setAuth(staffSession.access_token)", "Realtime uses the validated staff session"],
 ]) {
   check(rootHtml.includes(fragment), label);
 }
@@ -66,6 +69,7 @@ for (const path of [
   "supabase/migrations/20261016144000_transactional_payment_confirmation.sql",
   "supabase/migrations/20261016145000_sales_dashboard_owner_only.sql",
   "supabase/migrations/20261016150000_restrict_direct_order_mutations.sql",
+  "supabase/migrations/20261016152000_enable_order_realtime.sql",
   "supabase/functions/pickup-order/index.ts",
   "supabase/functions/staff-admin/index.ts",
 ]) {
