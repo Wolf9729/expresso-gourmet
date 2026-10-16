@@ -303,7 +303,7 @@ async function signInStaff(e){
   var profileResponse=await fetch(URL+'/rest/v1/profiles?id=eq.'+encodeURIComponent(authBody.user.id)+'&select=id,full_name,role,active',{headers:staffAuthHeaders()});
   var profileBody=await profileResponse.json();var profile=Array.isArray(profileBody)?profileBody[0]:null;
   if(!profileResponse.ok||!profile||profile.active!==true||!['owner','employee'].includes(profile.role)){staffSession=null;throw Error('Conta sem perfil ativo de proprietária/funcionário. Solicite à proprietária a ativação do acesso.');}
-  role=profile.role;authDisplayName=profile.full_name||email;isDemoMode=false;ordersAreLive=true;panel='overview';analyticsDays=30;analyticsData=null;
+  role=profile.role;authDisplayName=profile.full_name||email;ordersAreLive=true;panel='overview';analyticsDays=30;analyticsData=null;
   setStaffScreen(true);
   document.getElementById('staff-welcome').textContent='Olá, '+authDisplayName;
   document.getElementById('staff-description').textContent=role==='owner'?'Proprietária · acesso administrativo completo':'Funcionário · operação de pedidos';
@@ -434,7 +434,6 @@ function renderAnalyticsMarkup(){
  var data=analyticsData,period=Number(analyticsDays)||30;
  var header='<div class="welcome"><div><h2>Análise de vendas</h2><p class="muted">Dias de maior saída, produtos líderes, receita paga e comportamento por horário.</p></div><span class="status ok">● Dados registrados no Supabase</span></div>'+
  '<div class="analytics-toolbar"><div><span class="kicker-note">PERÍODO ANALISADO</span><br><span class="muted">'+period+' dias · fuso America/Fortaleza</span></div><div style="display:flex;gap:8px;align-items:center"><select id="analytics-period" aria-label="Período de análise"><option value="7" '+(period===7?'selected':'')+'>Últimos 7 dias</option><option value="30" '+(period===30?'selected':'')+'>Últimos 30 dias</option><option value="90" '+(period===90?'selected':'')+'>Últimos 90 dias</option><option value="180" '+(period===180?'selected':'')+'>Últimos 180 dias</option></select><button class="btn soft" type="button" onclick="refreshAnalytics()">Atualizar ↻</button></div></div>';
- if(isDemo)header+='<div class="notice"><b>Modo de apresentação.</b> Os números abaixo são inventados para demonstrar os gráficos e não representam as vendas reais da Expresso Gourmet.</div>';
  if(data&&data.source==='legacy')header+='<div class="notice"><b>Histórico legado encontrado.</b> O painel está lendo pedidos não demonstrativos do cadastro anterior enquanto as vendas normalizadas são registradas. A amostra atual é pequena, então os rankings são apenas um ponto de partida.</div>';
  if(!data)return header+'<div class="empty-analytics">'+(staffSession?'Carregando os indicadores do banco…':'Faça login como proprietária para carregar os dados reais de vendas.')+'</div>';
  var s=data.summary||{},dayArr=data.weekdays||[],top=data.top_products||[],daily=data.daily||[],hours=data.hours||[],comparison=data.comparison||{};
@@ -468,7 +467,7 @@ function renderAnalyticsMarkup(){
 function refreshAnalytics(){var select=document.getElementById('analytics-period');var days=select?Number(select.value):30;loadLiveAnalytics(days).catch(function(e){toast('Falha ao atualizar vendas: '+(e.message||'erro'));});}
 async function signOutStaff(){
  if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
- var previous=staffSession;staffSession=null;ordersAreLive=false;isDemoMode=false;analyticsData=null;
+ var previous=staffSession;staffSession=null;ordersAreLive=false;analyticsData=null;
  if(previous&&previous.access_token){try{await fetch(URL+'/auth/v1/logout',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+previous.access_token}});}catch(_){}}
  setStaffScreen(false);document.getElementById('staff-email').value='';document.getElementById('staff-password').value='';setLoginFeedback('Sessão encerrada.',true);role='owner';panel='overview';
 }
@@ -655,7 +654,7 @@ function renderAdmin(){
  var active=orders.filter(function(o){return ['new','confirmed','preparing'].includes(o.status)}).length,ready=orders.filter(function(o){return o.status==='ready'}).length;
  var totalRevenue=orders.filter(function(o){return o.status==='completed'&&o.paymentStatus==='paid'}).reduce(function(a,o){return a+o.total},0);
  var currentEmpty=orders.length===0;
- var note='<div class="notice"><b>Dados do Supabase.</b> A fila e os indicadores refletem pedidos registrados no banco. Valores pendentes de pagamento não contam como faturamento recebido.</div>';
+ var note='<div class="notice"><b>Dados reais do Supabase.</b> A fila e os indicadores refletem pedidos registrados no banco. Valores pendentes não contam como faturamento recebido.</div>';
  var h='';
  if(panel==='analytics'&&role==='owner')h=renderAnalyticsMarkup();
  else if(panel==='overview')h='<div class="welcome"><div><h2>Olá, '+esc(authDisplayName||'equipe')+' ☀</h2><p class="muted">Resumo operacional atualizado a partir dos pedidos registrados.</p></div><span class="status ok">● Sessão válida</span></div>'+note+'<div class="stats"><div class="stat"><small>Em andamento</small><strong>'+active+'</strong><span>Aguardando preparo</span></div><div class="stat"><small>Prontos</small><strong>'+ready+'</strong><span>Retirada no balcão</span></div><div class="stat"><small>Pedidos carregados</small><strong>'+orders.length+'</strong><span>Pedidos autorizados pelo banco</span></div><div class="stat"><small>Pagamentos marcados como pagos</small><strong style="font-size:19px">'+money(totalRevenue)+'</strong><span>Pedidos finalizados e confirmados</span></div></div>'+(currentEmpty?'<div class="empty-analytics">Nenhum pedido foi encontrado nas tabelas operacionais. Os pedidos novos aparecem aqui assim que forem gravados no sistema.</div>':'')+'<div class="box"><h2>Fila de pedidos</h2><p>Confirme, prepare, marque pronto, finalize a retirada e confirme o pagamento recebido no balcão.</p><div class="queue">'+orders.filter(function(o){return !['completed','cancelled'].includes(o.status)}).slice(0,5).map(qcard).join('')+'</div><div style="margin-top:13px"><button class="btn soft" onclick="setPanel(\\'orders\\')">Abrir fila completa ↗</button></div></div>';
