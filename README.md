@@ -142,3 +142,10 @@ Depois de criar um repositório privado vazio no GitHub, abra PowerShell na raiz
 ```
 
 O script usa as credenciais do Git Credential Manager, não inclui tokens no comando e não força o push se o remoto tiver histórico diferente. Leia `docs/07-GITHUB-VERCEL-SUPABASE.md` antes de conectar o repositório à Vercel e alterar o banco.
+
+
+## Apresentação visual — pedido e área da equipe
+
+Abra [`presentation/index.html`](./presentation/index.html) para ver o cardápio, a sacola, o checkout demonstrativo, a fila da equipe, as etapas do pedido e as permissões ilustrativas da proprietária e do funcionário. A página consulta somente leitura o catálogo público `expresso_public_catalog` do Supabase usando uma chave publicável; se a consulta não for permitida no navegador, usa dados de fallback.
+
+**Importante:** o checkout desta apresentação é apenas demonstrativo. Ele não cria pedidos reais nem grava alterações de pedidos, disponibilidade, equipe ou configurações no Supabase. A conexão Git da Vercel e a configuração de variáveis de ambiente ainda dependem de autorização para o escopo Vercel `alysson-projects1`; não publicar esta página sobre produção como se fosse a aplicação completa.
