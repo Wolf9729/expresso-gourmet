@@ -66,7 +66,7 @@ O pedido legado de R$ 27,00 não conta como faturamento pago até a equipe confi
 
 ## Verificação
 
-O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as três entradas HTML, as integrações reais de checkout/equipe/dashboard, o uso de RPC para transições de pedido e a ausência dos antigos geradores de demonstração.
+O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as três entradas HTML, as integrações reais de checkout/equipe/dashboard, o uso de RPC para transições de pedido, a renovação das sessões autenticadas e a ausência dos antigos geradores de demonstração.
 
 Antes de anunciar a operação em produção, ainda é necessário fazer uma compra controlada autorizada pelo estabelecimento, com pagamento e retirada reais. Não crie pedidos fictícios no banco de produção só para verificar a interface.
 
