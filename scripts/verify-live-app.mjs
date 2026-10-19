@@ -46,12 +46,18 @@ for (const [fragment, label] of [
   ["/functions/v1/staff-admin", "employee invitations use the protected staff endpoint"],
   ["set_order_payment_status", "payment confirmation uses a transactional RPC"],
   ["set_product_availability", "product availability changes use a database RPC"],
+  ["advance_order_status", "order state transitions use a database RPC"],
+  ["function cancelOrder(", "the staff UI supports safe cancellation of eligible orders"],
+  ["/rest/v1/categories?", "the admin editor reads live categories"],
+  ["/rest/v1/business_settings?", "the owner settings screen reads persisted store settings"],
   ["connectOrdersRealtime", "staff queue initializes authenticated Realtime"],
   ["postgres_changes", "staff queue listens for database order events"],
   ["setAuth(staffSession.access_token)", "Realtime uses the validated staff session"],
 ]) {
   check(rootHtml.includes(fragment), label);
 }
+
+check(!rootHtml.includes("method:'PATCH',headers:Object.assign(staffAuthHeaders(),{Prefer:'return=minimal'}),body:JSON.stringify({status:transition[0]})"), "no direct client-side order status mutation");
 
 for (const [fragment, label] of [
   ["var demo=[", "no seeded demonstration catalog"],
@@ -72,6 +78,8 @@ for (const path of [
   "supabase/migrations/20261016145000_sales_dashboard_owner_only.sql",
   "supabase/migrations/20261016150000_restrict_direct_order_mutations.sql",
   "supabase/migrations/20261016152000_enable_order_realtime.sql",
+  "supabase/migrations/20261018170000_harden_order_transitions_and_admin_reads.sql",
+  "supabase/migrations/20261018171000_fix_authenticated_category_reads.sql",
   "supabase/functions/pickup-order/index.ts",
   "supabase/functions/staff-admin/index.ts",
 ]) {
