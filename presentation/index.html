@@ -269,7 +269,7 @@ async function advance(id){
  var order=orders.find(function(x){return x.id===id});if(!order||!staffSession)return;
  var transition=next[order.status];if(!transition)return;
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/advance_order_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_next_status:transition[0]})});
+  var response=await staffFetch(URL+'/rest/v1/rpc/advance_order_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_next_status:transition[0]})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'A alteração foi recusada pelo banco.'));
   toast('Pedido #'+order.n+': '+st[transition[0]]);await loadLiveOrders();
@@ -280,7 +280,7 @@ async function cancelOrder(id){
  if(!order||!staffSession||!['new','confirmed'].includes(order.status))return;
  if(!window.confirm('Cancelar o pedido #'+String(order.n).padStart(5,'0')+'? Esta ação ficará registrada no sistema.'))return;
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/advance_order_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_next_status:'cancelled'})});
+  var response=await staffFetch(URL+'/rest/v1/rpc/advance_order_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_next_status:'cancelled'})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível cancelar o pedido.'));
   toast('Pedido #'+order.n+' cancelado.');await loadLiveOrders();
@@ -289,7 +289,7 @@ async function cancelOrder(id){
 async function markPaymentReceived(id){
  if(!staffSession)return;
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/set_order_payment_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_status:'paid',p_reference:'Confirmado pela equipe no balcão'})});
+  var response=await staffFetch(URL+'/rest/v1/rpc/set_order_payment_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_status:'paid',p_reference:'Confirmado pela equipe no balcão'})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível confirmar o pagamento.'));
   toast('Pagamento confirmado no banco.');await loadLiveOrders();
@@ -298,6 +298,42 @@ async function markPaymentReceived(id){
 function setPanel(p){if(role==='employee'&&['settings','team','analytics'].includes(p)){toast('Esta área está disponível apenas para a proprietária.');return}panel=p;if(p==='analytics'&&staffSession&&!analyticsData)loadLiveAnalytics(30).catch(function(e){toast('Falha ao carregar análise: '+(e.message||'erro'));});if(p==='products'&&staffSession)loadAdminProducts().catch(function(e){toast('Não foi possível carregar produtos: '+(e.message||'erro'));});if(p==='settings'&&staffSession&&role==='owner')loadStoreSettings().catch(function(e){toast('Não foi possível carregar as configurações: '+(e.message||'erro'));});if(p==='team'&&staffSession&&role==='owner')loadTeamProfiles().catch(function(e){toast('Não foi possível carregar a equipe: '+(e.message||'erro'));});renderAdmin()}
 document.querySelectorAll('[data-page]').forEach(function(b){b.onclick=function(){setPanel(b.dataset.page)}});
 
+async function refreshStaffSessionIfNeeded(force){
+ if(!staffSession)throw Error('Entre novamente no painel para continuar.');
+ var expiresAt=Number(staffSession.expires_at||0)*1000;
+ if(!expiresAt&&Number(staffSession.expires_in)>0)expiresAt=Date.now()+Number(staffSession.expires_in)*1000;
+ if(!force&&expiresAt>Date.now()+60000)return;
+ if(!staffSession.refresh_token)throw Error('A sessão expirou. Entre novamente no painel.');
+ var response,body={};
+ try{
+  response=await fetch(URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({refresh_token:staffSession.refresh_token})});
+  body=await response.json();
+ }catch(_){throw Error('Não foi possível renovar a sessão. Verifique a conexão e tente novamente.');}
+ if(!response.ok||!body.access_token||!body.refresh_token){
+  if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
+  await disconnectOrdersRealtime();
+  staffSession=null;ordersAreLive=false;analyticsData=null;role='owner';panel='overview';
+  setStaffScreen(false);setLoginFeedback('Sua sessão expirou. Entre novamente.',false);
+  throw Error('Sua sessão expirou. Entre novamente no painel.');
+ }
+ if(!body.expires_at)body.expires_at=Math.floor(Date.now()/1000)+Number(body.expires_in||3600);
+ staffSession=body;
+ if(realtimeClient&&realtimeClient.realtime&&typeof realtimeClient.realtime.setAuth==='function'){
+  realtimeClient.realtime.setAuth(staffSession.access_token);
+ }
+}
+async function staffFetch(url,options){
+ if(!staffSession)throw Error('Entre novamente no painel para continuar.');
+ await refreshStaffSessionIfNeeded(false);
+ var opts=options||{};
+ var send=function(){return fetch(url,Object.assign({},opts,{headers:Object.assign({},staffAuthHeaders(),opts.headers||{})}));};
+ var response=await send();
+ if(response.status===401){
+  await refreshStaffSessionIfNeeded(true);
+  response=await send();
+ }
+ return response;
+}
 function staffAuthHeaders(){return {apikey:KEY,Authorization:'Bearer '+(staffSession&&staffSession.access_token||''),'Content-Type':'application/json',Accept:'application/json'};}
 function setLoginFeedback(message,ok){var el=document.getElementById('staff-login-feedback');if(el){el.textContent=message||'';el.classList.toggle('ok',!!ok);}}
 function setStaffScreen(authed){
@@ -312,6 +348,7 @@ async function signInStaff(e){
  try{
   var response=await fetch(URL+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({email:email,password:password})});
   var authBody=await response.json();if(!response.ok||!authBody.access_token||!authBody.user)throw Error(apiErrorMessage(authBody,'E-mail ou senha inválidos.'));
+  if(!authBody.expires_at)authBody.expires_at=Math.floor(Date.now()/1000)+Number(authBody.expires_in||3600);
   staffSession=authBody;
   var profileResponse=await fetch(URL+'/rest/v1/profiles?id=eq.'+encodeURIComponent(authBody.user.id)+'&select=id,full_name,role,active',{headers:staffAuthHeaders()});
   var profileBody=await profileResponse.json();var profile=Array.isArray(profileBody)?profileBody[0]:null;
@@ -329,7 +366,7 @@ async function signInStaff(e){
 }
 async function loadLiveOrders(){
  if(!staffSession)return;
- var response=await fetch(URL+'/rest/v1/orders?select=id,order_number,customer_name,customer_phone,status,total,created_at,payment_method,payment_status,order_items(product_name,quantity)&order=created_at.desc&limit=300',{headers:staffAuthHeaders()});
+ var response=await staffFetch(URL+'/rest/v1/orders?select=id,order_number,customer_name,customer_phone,status,total,created_at,payment_method,payment_status,order_items(product_name,quantity)&order=created_at.desc&limit=300',{headers:staffAuthHeaders()});
  var body=await response.json();if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível carregar a fila de pedidos.'));
  orders=(Array.isArray(body)?body:[]).map(function(o){return {id:String(o.id),n:Number(o.order_number)||0,name:o.customer_name||'Cliente',phone:o.customer_phone||'',status:o.status,total:Number(o.total)||0,createdAt:o.created_at,paymentMethod:o.payment_method,paymentStatus:o.payment_status,items:(o.order_items||[]).map(function(i){return [i.product_name,Number(i.quantity)||1]})};});
  ordersAreLive=true;renderAdmin();
@@ -422,11 +459,11 @@ async function loadLiveAnalytics(days){
  if(!staffSession||role!=='owner')return;
  analyticsDays=Number(days)||30;
  var today=salesDateKey(new Date()),from=shiftSalesDate(today,-analyticsDays+1);
- var response=await fetch(URL+'/rest/v1/rpc/get_sales_dashboard',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_from:from,p_to:today})});
+ var response=await staffFetch(URL+'/rest/v1/rpc/get_sales_dashboard',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_from:from,p_to:today})});
  var body=await response.json();if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível carregar a análise de vendas.'));
  if(Number(body&&body.summary&&body.summary.orders||0)===0){
   try{
-   var legacyResponse=await fetch(URL+'/rest/v1/rpc/load_expresso_app_state',{method:'POST',headers:staffAuthHeaders(),body:'{}'});
+   var legacyResponse=await staffFetch(URL+'/rest/v1/rpc/load_expresso_app_state',{method:'POST',headers:staffAuthHeaders(),body:'{}'});
    if(legacyResponse.ok){
     var legacyEnvelope=await legacyResponse.json(),legacyPayload=legacyEnvelope&&legacyEnvelope.payload;
     if(legacyEnvelope&&legacyEnvelope.ok&&legacyPayload){
@@ -556,16 +593,16 @@ function qcard(o){
 async function loadAdminProducts(){
  if(!staffSession)return;
  const headers=staffAuthHeaders();
- const productResponse=await fetch(URL+'/rest/v1/products?select=id,legacy_id,name,description,category_id,image_url,price,promo_price,active,available,featured,sort_order,prep_minutes,categories(name)&order=sort_order.asc,name.asc',{headers:headers});
+ const productResponse=await staffFetch(URL+'/rest/v1/products?select=id,legacy_id,name,description,category_id,image_url,price,promo_price,active,available,featured,sort_order,prep_minutes,categories(name)&order=sort_order.asc,name.asc',{headers:headers});
  const productBody=await productResponse.json();
  if(!productResponse.ok)throw Error(apiErrorMessage(productBody,'Não foi possível consultar o catálogo.'));
- const categoryResponse=await fetch(URL+'/rest/v1/categories?select=id,name,active&active=eq.true&order=sort_order.asc,name.asc',{headers:headers});
+ const categoryResponse=await staffFetch(URL+'/rest/v1/categories?select=id,name,active&active=eq.true&order=sort_order.asc,name.asc',{headers:headers});
  const categoryBody=await categoryResponse.json();
  if(!categoryResponse.ok)throw Error(apiErrorMessage(categoryBody,'Não foi possível consultar as categorias.'));
  adminCategories=Array.isArray(categoryBody)?categoryBody:[];
  let costs={};
  if(role==='owner'){
-  const costResponse=await fetch(URL+'/rest/v1/product_costs?select=product_id,unit_cost',{headers:headers});
+  const costResponse=await staffFetch(URL+'/rest/v1/product_costs?select=product_id,unit_cost',{headers:headers});
   const costBody=await costResponse.json();
   if(!costResponse.ok)throw Error(apiErrorMessage(costBody,'Não foi possível consultar os custos.'));
   (Array.isArray(costBody)?costBody:[]).forEach(function(c){costs[c.product_id]=Number(c.unit_cost)});
@@ -622,7 +659,7 @@ async function saveAdminProduct(e){
   p_prep_minutes:num('admin-product-prep')
  };
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/admin_save_product',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify(payload)});
+  var response=await staffFetch(URL+'/rest/v1/rpc/admin_save_product',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify(payload)});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível salvar o produto.'));
   if(feedback){feedback.textContent='Produto salvo e catálogo atualizado.';feedback.classList.add('ok');}
@@ -634,7 +671,7 @@ async function saveAdminProduct(e){
 async function toggleAdminProductAvailability(id,current){
  if(!staffSession)return;
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/set_product_availability',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_product_id:id,p_available:current!=='true'})});
+  var response=await staffFetch(URL+'/rest/v1/rpc/set_product_availability',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_product_id:id,p_available:current!=='true'})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível alterar a disponibilidade.'));
   toast(current==='true'?'Produto pausado no cardápio.':'Produto disponível para pedidos.');
@@ -656,7 +693,7 @@ function renderAdminProductsEvents(el){
 
 async function loadStoreSettings(){
  if(!staffSession||role!=='owner')return;
- var response=await fetch(URL+'/rest/v1/business_settings?select=id,store_name,tagline,location,whatsapp_number,instagram_url,primary_color,accept_orders,pickup_enabled,opening_hours&id=eq.true',{headers:staffAuthHeaders()});
+ var response=await staffFetch(URL+'/rest/v1/business_settings?select=id,store_name,tagline,location,whatsapp_number,instagram_url,primary_color,accept_orders,pickup_enabled,opening_hours&id=eq.true',{headers:staffAuthHeaders()});
  var body=await response.json();if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível carregar as configurações.'));
  storeSettings=Array.isArray(body)?body[0]:null;if(!storeSettings)throw Error('As configurações da loja não foram encontradas.');
  renderAdmin();
@@ -670,7 +707,7 @@ async function saveStoreSettings(e){
  var button=document.getElementById('store-settings-save'),feedback=document.getElementById('store-settings-feedback');button.disabled=true;button.textContent='Salvando…';
  var payload={p_store_name:document.getElementById('setting-name').value.trim(),p_tagline:document.getElementById('setting-tagline').value.trim()||null,p_location:document.getElementById('setting-location').value.trim()||null,p_whatsapp_number:document.getElementById('setting-whatsapp').value.trim()||null,p_instagram_url:document.getElementById('setting-instagram').value.trim()||null,p_primary_color:document.getElementById('setting-color').value.trim(),p_accept_orders:document.getElementById('setting-accept').checked,p_pickup_enabled:true,p_opening_hours:storeSettings.opening_hours||{}};
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/admin_update_store_settings',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify(payload)});
+  var response=await staffFetch(URL+'/rest/v1/rpc/admin_update_store_settings',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify(payload)});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível salvar as configurações.'));
   if(feedback){feedback.textContent='Configurações salvas. O cardápio público já recebeu a atualização.';feedback.classList.add('ok');}
@@ -681,7 +718,7 @@ async function saveStoreSettings(e){
 
 async function loadTeamProfiles(){
  if(!staffSession||role!=='owner')return;
- var response=await fetch(URL+'/rest/v1/profiles?select=id,full_name,role,active,phone&order=role.asc,full_name.asc',{headers:staffAuthHeaders()});
+ var response=await staffFetch(URL+'/rest/v1/profiles?select=id,full_name,role,active,phone&order=role.asc,full_name.asc',{headers:staffAuthHeaders()});
  var body=await response.json();if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível consultar os acessos da equipe.'));
  teamProfiles=Array.isArray(body)?body:[];
  renderAdmin();
@@ -696,6 +733,7 @@ async function inviteTeamMember(e){
  e.preventDefault();if(!staffSession||role!=='owner')return;
  var button=document.getElementById('team-invite-button'),feedback=document.getElementById('team-invite-feedback');button.disabled=true;button.textContent='Enviando convite…';
  try{
+  await refreshStaffSessionIfNeeded(false);
   var response=await fetch(URL+'/functions/v1/staff-admin',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+staffSession.access_token,'Content-Type':'application/json'},body:JSON.stringify({action:'invite',fullName:document.getElementById('team-invite-name').value.trim(),email:document.getElementById('team-invite-email').value.trim()})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok||!body.success)throw Error(body&&body.error&&body.error.message||'Não foi possível enviar o convite.');
@@ -707,7 +745,7 @@ async function inviteTeamMember(e){
 async function toggleTeamMember(id,current){
  if(!staffSession||role!=='owner')return;
  try{
-  var response=await fetch(URL+'/rest/v1/rpc/admin_set_employee_active',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_user_id:id,p_active:current!=='true'})});
+  var response=await staffFetch(URL+'/rest/v1/rpc/admin_set_employee_active',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_user_id:id,p_active:current!=='true'})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível alterar o acesso.'));
   await loadTeamProfiles();toast(current==='true'?'Acesso do funcionário desativado.':'Acesso do funcionário reativado.');
