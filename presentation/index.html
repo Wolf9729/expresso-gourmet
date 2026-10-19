@@ -269,11 +269,22 @@ async function advance(id){
  var order=orders.find(function(x){return x.id===id});if(!order||!staffSession)return;
  var transition=next[order.status];if(!transition)return;
  try{
-  var response=await fetch(URL+'/rest/v1/orders?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:Object.assign(staffAuthHeaders(),{Prefer:'return=minimal'}),body:JSON.stringify({status:transition[0]})});
+  var response=await fetch(URL+'/rest/v1/rpc/advance_order_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_next_status:transition[0]})});
   var body={};try{body=await response.json()}catch(_){}
   if(!response.ok)throw Error(apiErrorMessage(body,'A alteração foi recusada pelo banco.'));
   toast('Pedido #'+order.n+': '+st[transition[0]]);await loadLiveOrders();
  }catch(e){toast('Não foi possível atualizar o pedido: '+(e.message||'erro'));}
+}
+async function cancelOrder(id){
+ var order=orders.find(function(x){return x.id===id});
+ if(!order||!staffSession||!['new','confirmed'].includes(order.status))return;
+ if(!window.confirm('Cancelar o pedido #'+String(order.n).padStart(5,'0')+'? Esta ação ficará registrada no sistema.'))return;
+ try{
+  var response=await fetch(URL+'/rest/v1/rpc/advance_order_status',{method:'POST',headers:staffAuthHeaders(),body:JSON.stringify({p_order_id:id,p_next_status:'cancelled'})});
+  var body={};try{body=await response.json()}catch(_){}
+  if(!response.ok)throw Error(apiErrorMessage(body,'Não foi possível cancelar o pedido.'));
+  toast('Pedido #'+order.n+' cancelado.');await loadLiveOrders();
+ }catch(e){toast(e.message||'Falha ao cancelar pedido.');}
 }
 async function markPaymentReceived(id){
  if(!staffSession)return;
@@ -540,7 +551,7 @@ function qcard(o){
  var transition=next[o.status];
  var created=o.createdAt?new Date(o.createdAt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Horário não disponível';
  var paymentLabel=o.paymentStatus==='paid'?'Pagamento confirmado':(o.paymentStatus==='refunded'?'Pagamento estornado':(o.paymentStatus==='failed'?'Pagamento com falha':'Pagamento pendente'));
- return '<article class="qcard"><div class="qtop"><div><small class="qnum">PEDIDO #'+String(o.n).padStart(5,'0')+'</small><h3>'+esc(o.name)+'</h3><small class="muted">'+esc(o.phone||'Sem WhatsApp')+' · '+esc(created)+' · Retirada no balcão</small></div><span class="badge '+esc(o.status)+'">'+esc(st[o.status]||o.status)+'</span></div><p>'+((o.items||[]).map(function(x){return x[1]+'× '+esc(x[0])}).join('<br>')||'Itens não detalhados')+'</p><div class="qfoot"><div><strong>'+money(o.total)+'</strong><small style="display:block" class="muted">'+paymentLabel+'</small></div><div class="product-actions">'+(transition?'<button type="button" data-advance="'+esc(o.id)+'">'+transition[1]+'</button>':'<span class="muted">'+(o.status==='completed'?'Retirada finalizada':'Sem ação de preparo')+'</span>')+(o.paymentStatus!=='paid'&&o.status!=='cancelled'?'<button type="button" class="btn soft" data-payment="'+esc(o.id)+'">Confirmar pagamento</button>':'')+'</div></div></article>';
+ return '<article class="qcard"><div class="qtop"><div><small class="qnum">PEDIDO #'+String(o.n).padStart(5,'0')+'</small><h3>'+esc(o.name)+'</h3><small class="muted">'+esc(o.phone||'Sem WhatsApp')+' · '+esc(created)+' · Retirada no balcão</small></div><span class="badge '+esc(o.status)+'">'+esc(st[o.status]||o.status)+'</span></div><p>'+((o.items||[]).map(function(x){return x[1]+'× '+esc(x[0])}).join('<br>')||'Itens não detalhados')+'</p><div class="qfoot"><div><strong>'+money(o.total)+'</strong><small style="display:block" class="muted">'+paymentLabel+'</small></div><div class="product-actions">'+(transition?'<button type="button" data-advance="'+esc(o.id)+'">'+transition[1]+'</button>':'<span class="muted">'+(o.status==='completed'?'Retirada finalizada':'Sem ação de preparo')+'</span>')+(o.paymentStatus!=='paid'&&o.status!=='cancelled'?'<button type="button" class="btn soft" data-payment="'+esc(o.id)+'">Confirmar pagamento</button>':'')+(['new','confirmed'].includes(o.status)?'<button type="button" class="btn soft" data-cancel-order="'+esc(o.id)+'">Cancelar pedido</button>':'')+'</div></div></article>';
 }
 async function loadAdminProducts(){
  if(!staffSession)return;
@@ -722,6 +733,7 @@ function renderAdmin(){
  else if(panel==='team'&&role==='owner')h=renderTeamMarkup();
  el.innerHTML=h;
  el.querySelectorAll('[data-advance]').forEach(function(button){button.onclick=function(){advance(button.dataset.advance)}});
+ el.querySelectorAll('[data-cancel-order]').forEach(function(button){button.onclick=function(){cancelOrder(button.dataset.cancelOrder)}});
  el.querySelectorAll('[data-payment]').forEach(function(button){button.onclick=function(){markPaymentReceived(button.dataset.payment)}});
  if(panel==='analytics'){var sel=document.getElementById('analytics-period');if(sel)sel.onchange=function(){refreshAnalytics()};}
  if(panel==='products')renderAdminProductsEvents(el);
