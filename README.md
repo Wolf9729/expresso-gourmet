@@ -7,7 +7,7 @@ Cardápio digital mobile-first e painel de operação da lanchonete Expresso Gou
 - `index.html`: entrada principal do site estático servido pela Vercel.
 - `presentation/index.html`: mesmo arquivo de aplicação, mantido para preservar o endereço anterior de apresentação.
 - `supabase/functions/pickup-order/index.ts`: endpoint de checkout real, com validação do servidor, idempotência, limite de requisições e confirmação de preços/disponibilidade no banco.
-- `supabase/functions/staff-admin/index.ts`: convite de funcionários, permitido apenas para a proprietária autenticada.
+- `supabase/functions/staff-admin/index.ts`: endpoint de convites, com validação da proprietária ativa. O botão de convite no painel está temporariamente pausado até validar o fluxo de definição da primeira senha; contas já cadastradas continuam gerenciáveis.
 - A fila da equipe recebe eventos PostgreSQL Realtime apenas após o login; a consulta periódica funciona como recuperação se o socket ou o CDN falhar.
 - `supabase/migrations/`: alterações aditivas e controles de segurança registrados no repositório.
 
@@ -28,7 +28,7 @@ Há uma única tela de login por e-mail e senha via Supabase Auth. O papel vem d
 
 - **Proprietária:** análise de vendas, catálogo, preço, custos, parâmetros da loja, pagamentos e equipe.
 - **Funcionários:** fila de pedidos, atualizações de preparo/retirada e disponibilidade dos produtos. O dashboard financeiro e a edição de custos ficam restritos à proprietária.
-- **Equipe:** convites por e-mail usam a Edge Function `staff-admin`; cada pessoa deve usar sua conta individual.
+- **Equipe:** a lista e os controles de ativação/desativação usam contas individuais. Novos convites pela interface permanecem pausados até concluir a validação da primeira senha do Supabase.
 
 ## Dashboard de vendas
 
