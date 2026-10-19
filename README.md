@@ -51,6 +51,8 @@ As migrações novas preservam o estado JSONB legado como arquivo de recuperaç�
 5. `20261016145000_sales_dashboard_owner_only.sql` — restringe o dashboard financeiro à proprietária.
 6. `20261016150000_restrict_direct_order_mutations.sql` — restringe inserções/alterações diretas de itens e pagamentos; a aplicação usa as funções transacionais aprovadas.
 7. `20261016152000_enable_order_realtime.sql` — inclui `orders` na publicação Realtime para acelerar a fila da equipe.
+8. `20261018170000_harden_order_transitions_and_admin_reads.sql` — centraliza o avanço/cancelamento de pedidos em uma RPC, restringe mutações diretas e libera as leituras administrativas com RLS.
+9. `20261018171000_fix_authenticated_category_reads.sql` — corrige a leitura de categorias usada pelo formulário de produtos.
 
 ### Estado conferido após a migração
 
@@ -64,7 +66,7 @@ O pedido legado de R$ 27,00 não conta como faturamento pago até a equipe confi
 
 ## Verificação
 
-O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as duas entradas HTML, a presença das integrações reais e a ausência dos antigos geradores de demonstração.
+O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as três entradas HTML, as integrações reais de checkout/equipe/dashboard, o uso de RPC para transições de pedido e a ausência dos antigos geradores de demonstração.
 
 Antes de anunciar a operação em produção, ainda é necessário fazer uma compra controlada autorizada pelo estabelecimento, com pagamento e retirada reais. Não crie pedidos fictícios no banco de produção só para verificar a interface.
 
