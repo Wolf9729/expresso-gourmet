@@ -64,6 +64,9 @@ check(!rootHtml.includes("method:'PATCH',headers:Object.assign(staffAuthHeaders(
 const categoryMigration = readFileSync(join(root, "supabase/migrations/20261018171000_fix_authenticated_category_reads.sql"), "utf8");
 check(categoryMigration.includes("grant select on table public.categories to authenticated"), "category read permission is present in the SQL migration");
 check(categoryMigration.includes("revoke insert, update, delete on table public.categories from authenticated"), "direct category mutations are restricted in the SQL migration");
+const rateLimitMigration = readFileSync(join(root, "supabase/migrations/20261018172000_explicit_rate_limit_denial_and_legacy_indexes.sql"), "utf8");
+check(rateLimitMigration.includes("using (false)") && rateLimitMigration.includes("with check (false)"), "checkout rate-limit table explicitly denies browser roles");
+check(rateLimitMigration.includes("expresso_owner_private_state_updated_by_idx"), "legacy foreign-key index is present in the SQL migration");
 check(!rootHtml.includes("fetch(URL+'/rest/v1/rpc/advance_order_status"), "order status changes use the refresh-aware authenticated wrapper");
 
 for (const [fragment, label] of [
@@ -87,6 +90,7 @@ for (const path of [
   "supabase/migrations/20261016152000_enable_order_realtime.sql",
   "supabase/migrations/20261018170000_harden_order_transitions_and_admin_reads.sql",
   "supabase/migrations/20261018171000_fix_authenticated_category_reads.sql",
+  "supabase/migrations/20261018172000_explicit_rate_limit_denial_and_legacy_indexes.sql",
   "supabase/functions/pickup-order/index.ts",
   "supabase/functions/staff-admin/index.ts",
 ]) {
