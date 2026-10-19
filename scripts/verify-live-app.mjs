@@ -55,12 +55,15 @@ for (const [fragment, label] of [
   ["setAuth(staffSession.access_token)", "Realtime uses the validated staff session"],
   ["function refreshStaffSessionIfNeeded(force)", "staff sessions are refreshed before expiry"],
   ["async function staffFetch(url,options)", "authenticated requests use refreshed credentials"],
-  ["grant select on table public.categories to authenticated", "category read permission is captured in SQL migration"],
 ]) {
   check(rootHtml.includes(fragment), label);
 }
 
 check(!rootHtml.includes("method:'PATCH',headers:Object.assign(staffAuthHeaders(),{Prefer:'return=minimal'}),body:JSON.stringify({status:transition[0]})"), "no direct client-side order status mutation");
+
+const categoryMigration = readFileSync(join(root, "supabase/migrations/20261018171000_fix_authenticated_category_reads.sql"), "utf8");
+check(categoryMigration.includes("grant select on table public.categories to authenticated"), "category read permission is present in the SQL migration");
+check(categoryMigration.includes("revoke insert, update, delete on table public.categories from authenticated"), "direct category mutations are restricted in the SQL migration");
 check(!rootHtml.includes("fetch(URL+'/rest/v1/rpc/advance_order_status"), "order status changes use the refresh-aware authenticated wrapper");
 
 for (const [fragment, label] of [
