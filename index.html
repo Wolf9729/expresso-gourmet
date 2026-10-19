@@ -87,7 +87,18 @@
       </div>
       <p id="staff-login-feedback" class="login-feedback" role="status" aria-live="polite"></p>
     </form>
-    
+    <section id="invite-activation" class="hidden" aria-labelledby="invite-activation-title">
+      <h2 id="invite-activation-title">Ative seu acesso.</h2>
+      <p>Seu convite foi validado. Crie uma senha pessoal com pelo menos 12 caracteres para concluir o cadastro.</p>
+      <form id="invite-activation-form">
+        <div class="login-form-grid">
+          <div class="field full"><label for="invite-password">Nova senha</label><input id="invite-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128" placeholder="Use pelo menos 12 caracteres"></div>
+          <div class="field full"><label for="invite-password-confirm">Confirme a nova senha</label><input id="invite-password-confirm" type="password" autocomplete="new-password" required minlength="12" maxlength="128" placeholder="Digite a senha novamente"></div>
+          <div class="full"><button class="btn" id="invite-activation-submit" type="submit" style="width:100%">Definir senha e concluir ↗</button></div>
+        </div>
+        <p id="invite-activation-feedback" class="login-feedback" role="status" aria-live="polite"></p>
+      </form>
+    </section>
   </div>
 </div>
 <div id="staff-toolbar" class="admin-top hidden"><div class="notice" style="flex:1;margin:0"><b id="staff-welcome">Sessão ativa</b><br><span id="staff-description">Acesso validado pelo Supabase.</span></div><span id="staff-session-pill" class="staff-session-pill">Sessão autenticada</span><button class="btn soft" type="button" onclick="signOutStaff()">Sair</button></div>
@@ -106,7 +117,7 @@
 var URL='https://lmiyjmbedygqeyuzyznm.supabase.co',KEY='sb_publishable_EeOTLGqKv1oHVQ8-kIHjTQ_b_0HJpIh';
 var products=[],cart=new Map(),orders=[],role='owner',panel='overview',orderNumber=0,filter='Todos',live=false,accept=false,newOrder=null;
 var staffSession=null,analyticsData=null,analyticsDays=30,refreshTimer=null,authDisplayName='',ordersAreLive=false,productSort='featured',menuQuickFilter='all',teamProfiles=[],storeSettings=null,adminProducts=[],adminCategories=[],pickupStatusTimer=null,pendingPickupKey=null;
-var realtimeClient=null,orderRealtimeChannel=null,realtimeConnected=false,liveRefreshDebounce=null;
+var realtimeClient=null,orderRealtimeChannel=null,realtimeConnected=false,liveRefreshDebounce=null,inviteAccessToken=null,inviteTokenExpiresAt=0;
 var money=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
 var esc=s=>String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]});
 function toast(s){var e=document.getElementById('toast');e.textContent=s;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2300)}
@@ -569,6 +580,71 @@ function connectOrdersRealtime(){
   console.warn('Não foi possível iniciar Realtime; usando sincronização de reserva.');
  }
 }
+function handleInviteCallback(){
+ var hashText=window.location.hash||'';
+ var hashParams=new URLSearchParams(hashText.charAt(0)==='#'?hashText.slice(1):hashText);
+ var searchParams=new URLSearchParams(window.location.search||'');
+ var type=hashParams.get('type')||searchParams.get('type')||'';
+ var token=hashParams.get('access_token')||searchParams.get('access_token')||'';
+ if(type==='invite'&&token){
+  inviteAccessToken=token;
+  inviteTokenExpiresAt=Date.now()+Math.max(60,Number(hashParams.get('expires_in')||searchParams.get('expires_in'))||3600)*1000;
+  document.getElementById('staff-login-form').classList.add('hidden');
+  document.getElementById('invite-activation').classList.remove('hidden');
+  var feedback=document.getElementById('invite-activation-feedback');
+  if(feedback)feedback.textContent='Convite validado. Defina sua senha para concluir o acesso.';
+  show('team');
+  window.history.replaceState(null,document.title,window.location.pathname+window.location.search);
+  return;
+ }
+ var error=hashParams.get('error_description')||searchParams.get('error_description')||'';
+ if(type==='invite'&&error){
+  show('team');
+  setLoginFeedback('Não foi possível validar o convite. Solicite um novo link à proprietária.',false);
+  window.history.replaceState(null,document.title,window.location.pathname);
+ }
+}
+async function activateInvitePassword(e){
+ e.preventDefault();
+ var feedback=document.getElementById('invite-activation-feedback');
+ var button=document.getElementById('invite-activation-submit');
+ var password=document.getElementById('invite-password').value;
+ var confirmation=document.getElementById('invite-password-confirm').value;
+ if(!inviteAccessToken||Date.now()>=inviteTokenExpiresAt){
+  if(feedback)feedback.textContent='O convite expirou. Solicite um novo convite à proprietária.';
+  return;
+ }
+ if(password.length<12||password.length>128){
+  if(feedback)feedback.textContent='Use uma senha com pelo menos 12 caracteres.';
+  return;
+ }
+ if(password!==confirmation){
+  if(feedback)feedback.textContent='As senhas não coincidem.';
+  return;
+ }
+ button.disabled=true;button.textContent='Validando convite…';
+ try{
+  var headers={apikey:KEY,Authorization:'Bearer '+inviteAccessToken,Accept:'application/json','Content-Type':'application/json'};
+  var userResponse=await fetch(URL+'/auth/v1/user',{headers:headers});
+  var userBody={};try{userBody=await userResponse.json()}catch(_){}
+  if(!userResponse.ok||!userBody.email)throw Error('O convite expirou ou já foi utilizado. Solicite um novo link à proprietária.');
+  var updateResponse=await fetch(URL+'/auth/v1/user',{method:'PUT',headers:headers,body:JSON.stringify({password:password})});
+  var updateBody={};try{updateBody=await updateResponse.json()}catch(_){}
+  if(!updateResponse.ok)throw Error(updateBody.msg||updateBody.message||'Não foi possível definir a senha. Tente novamente ou solicite um novo convite.');
+  inviteAccessToken=null;inviteTokenExpiresAt=0;
+  document.getElementById('invite-activation').classList.add('hidden');
+  document.getElementById('staff-login-form').classList.remove('hidden');
+  document.getElementById('staff-email').value=userBody.email;
+  document.getElementById('staff-password').value='';
+  document.getElementById('invite-activation-form').reset();
+  setLoginFeedback('Senha definida. Entre com seu e-mail e a nova senha.',true);
+  window.history.replaceState(null,document.title,window.location.pathname+window.location.search);
+ }catch(error){
+  if(feedback)feedback.textContent=error&&error.message?error.message:'Não foi possível ativar o acesso.';
+ }finally{
+  button.disabled=false;button.textContent='Definir senha e concluir ↗';
+ }
+}
 async function signOutStaff(){
  if(refreshTimer){clearInterval(refreshTimer);refreshTimer=null;}
  await disconnectOrdersRealtime();
@@ -779,5 +855,5 @@ function renderAdmin(){
  var teamForm=el.querySelector('#team-invite-form');if(teamForm)teamForm.onsubmit=inviteTeamMember;
  el.querySelectorAll('[data-staff-active]').forEach(function(button){button.onclick=function(){toggleTeamMember(button.dataset.staffActive,button.dataset.active)}});
 }
-document.getElementById('staff-login-form').addEventListener('submit',signInStaff);loadCatalog();renderFilters();renderProducts();renderAdmin();renderCheckout();
+document.getElementById('staff-login-form').addEventListener('submit',signInStaff);document.getElementById('invite-activation-form').addEventListener('submit',activateInvitePassword);loadCatalog();renderFilters();renderProducts();renderAdmin();renderCheckout();handleInviteCallback();
 </script></body></html>
