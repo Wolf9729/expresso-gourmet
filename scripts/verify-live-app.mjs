@@ -53,11 +53,15 @@ for (const [fragment, label] of [
   ["connectOrdersRealtime", "staff queue initializes authenticated Realtime"],
   ["postgres_changes", "staff queue listens for database order events"],
   ["setAuth(staffSession.access_token)", "Realtime uses the validated staff session"],
+  ["function refreshStaffSessionIfNeeded(force)", "staff sessions are refreshed before expiry"],
+  ["async function staffFetch(url,options)", "authenticated requests use refreshed credentials"],
+  ["grant select on table public.categories to authenticated", "category read permission is captured in SQL migration"],
 ]) {
   check(rootHtml.includes(fragment), label);
 }
 
 check(!rootHtml.includes("method:'PATCH',headers:Object.assign(staffAuthHeaders(),{Prefer:'return=minimal'}),body:JSON.stringify({status:transition[0]})"), "no direct client-side order status mutation");
+check(!rootHtml.includes("fetch(URL+'/rest/v1/rpc/advance_order_status"), "order status changes use the refresh-aware authenticated wrapper");
 
 for (const [fragment, label] of [
   ["var demo=[", "no seeded demonstration catalog"],
