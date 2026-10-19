@@ -727,20 +727,7 @@ function renderTeamMarkup(){
  var rows=teamProfiles.map(function(p){
   return '<div class="member"><span class="avatar">'+esc((p.full_name||'U').slice(0,1).toUpperCase())+'</span><div style="flex:1"><b>'+esc(p.full_name||'Usuário sem nome')+'</b><small>'+(p.role==='owner'?'Proprietária':'Funcionário')+(p.phone?' · '+esc(p.phone):'')+'</small></div><span class="'+(p.active?'active-pill':'badge completed')+'">'+(p.active?'Ativo':'Inativo')+'</span>'+(p.role==='employee'?'<button class="btn soft" type="button" data-staff-active="'+esc(p.id)+'" data-active="'+(p.active?'true':'false')+'">'+(p.active?'Desativar':'Reativar')+'</button>':'')+'</div>';
  }).join('');
- return '<div class="welcome"><div><h2>Equipe e acessos</h2><p class="muted">Cada pessoa tem e-mail próprio; a função é definida no perfil autorizado, nunca no formulário de login.</p></div><span class="status ok">Acesso por perfil</span></div><div class="box"><h3>Convidar funcionário</h3><p>O convite é enviado pelo Supabase Auth. O funcionário deve aceitar o e-mail para concluir o acesso.</p><form id="team-invite-form"><div class="login-form-grid"><div class="field"><label for="team-invite-name">Nome completo</label><input id="team-invite-name" required maxlength="100"></div><div class="field"><label for="team-invite-email">E-mail individual</label><input id="team-invite-email" type="email" required maxlength="200"></div><div class="field full"><button class="btn" id="team-invite-button" type="submit">Enviar convite</button><p id="team-invite-feedback" class="login-feedback" role="status" aria-live="polite"></p></div></div></form></div><div class="box"><h3>Contas cadastradas</h3>'+ (rows||'<div class="empty-analytics">Nenhuma conta foi retornada para este perfil.</div>') +'</div><div class="box"><h3>Permissões</h3><p><b>Proprietária:</b> análise de vendas, produtos, custos, configurações e equipe.</p><p><b>Funcionário:</b> fila, preparo, retirada, confirmação de pagamento e disponibilidade dos produtos.</p></div>';
-}
-async function inviteTeamMember(e){
- e.preventDefault();if(!staffSession||role!=='owner')return;
- var button=document.getElementById('team-invite-button'),feedback=document.getElementById('team-invite-feedback');button.disabled=true;button.textContent='Enviando convite…';
- try{
-  await refreshStaffSessionIfNeeded(false);
-  var response=await fetch(URL+'/functions/v1/staff-admin',{method:'POST',headers:{apikey:KEY,Authorization:'Bearer '+staffSession.access_token,'Content-Type':'application/json'},body:JSON.stringify({action:'invite',fullName:document.getElementById('team-invite-name').value.trim(),email:document.getElementById('team-invite-email').value.trim()})});
-  var body={};try{body=await response.json()}catch(_){}
-  if(!response.ok||!body.success)throw Error(body&&body.error&&body.error.message||'Não foi possível enviar o convite.');
-  if(feedback){feedback.textContent=body.message||'Convite enviado.';feedback.classList.add('ok');}
-  document.getElementById('team-invite-form').reset();await loadTeamProfiles();toast('Convite de funcionário enviado.');
- }catch(error){if(feedback)feedback.textContent=error.message||'Falha ao convidar funcionário.';}
- finally{button.disabled=false;button.textContent='Enviar convite';}
+ return '<div class="welcome"><div><h2>Equipe e acessos</h2><p class="muted">Cada pessoa tem e-mail próprio; a função é definida no perfil autorizado, nunca no formulário de login.</p></div><span class="status ok">Acesso por perfil</span></div><div class="box"><h3>Novos convites temporariamente pausados</h3><p>O envio de convites está pausado enquanto validamos a definição da primeira senha. As contas já cadastradas e suas permissões continuam sendo gerenciadas nesta tela.</p></div><div class="box"><h3>Contas cadastradas</h3>'+ (rows||'<div class="empty-analytics">Nenhuma conta foi retornada para este perfil.</div>') +'</div><div class="box"><h3>Permissões</h3><p><b>Proprietária:</b> análise de vendas, produtos, custos, configurações e equipe.</p><p><b>Funcionário:</b> fila, preparo, retirada, confirmação de pagamento e disponibilidade dos produtos.</p></div>';
 }
 async function toggleTeamMember(id,current){
  if(!staffSession||role!=='owner')return;
@@ -776,7 +763,6 @@ function renderAdmin(){
  if(panel==='analytics'){var sel=document.getElementById('analytics-period');if(sel)sel.onchange=function(){refreshAnalytics()};}
  if(panel==='products')renderAdminProductsEvents(el);
  var settingsForm=el.querySelector('#store-settings-form');if(settingsForm)settingsForm.onsubmit=saveStoreSettings;
- var teamForm=el.querySelector('#team-invite-form');if(teamForm)teamForm.onsubmit=inviteTeamMember;
  el.querySelectorAll('[data-staff-active]').forEach(function(button){button.onclick=function(){toggleTeamMember(button.dataset.staffActive,button.dataset.active)}});
 }
 document.getElementById('staff-login-form').addEventListener('submit',signInStaff);loadCatalog();renderFilters();renderProducts();renderAdmin();renderCheckout();
