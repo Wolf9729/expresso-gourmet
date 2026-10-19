@@ -53,6 +53,7 @@ As migrações novas preservam o estado JSONB legado como arquivo de recuperaç�
 7. `20261016152000_enable_order_realtime.sql` — inclui `orders` na publicação Realtime para acelerar a fila da equipe.
 8. `20261018170000_harden_order_transitions_and_admin_reads.sql` — centraliza o avanço/cancelamento de pedidos em uma RPC, restringe mutações diretas e libera as leituras administrativas com RLS.
 9. `20261018171000_fix_authenticated_category_reads.sql` — corrige a leitura de categorias usada pelo formulário de produtos.
+10. `20261018172000_explicit_rate_limit_denial_and_legacy_indexes.sql` — explicita a negação de acesso de navegador ao limitador de pedidos e adiciona índices para duas chaves estrangeiras legadas.
 
 ### Estado conferido após a migração
 
@@ -66,13 +67,14 @@ O pedido legado de R$ 27,00 não conta como faturamento pago até a equipe confi
 
 ## Verificação
 
-O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as três entradas HTML, as integrações reais de checkout/equipe/dashboard, o uso de RPC para transições de pedido, a renovação das sessões autenticadas e a ausência dos antigos geradores de demonstração.
+O workflow `.github/workflows/verify-live-app.yml` valida a sintaxe JavaScript, a igualdade entre as três entradas HTML, as integrações reais de checkout/equipe/dashboard, o uso de RPC para transições de pedido, a renovação das sessões autenticadas, as políticas do limitador e a ausência dos antigos geradores de demonstração.
 
 Antes de anunciar a operação em produção, ainda é necessário fazer uma compra controlada autorizada pelo estabelecimento, com pagamento e retirada reais. Não crie pedidos fictícios no banco de produção só para verificar a interface.
 
 ## Segurança e publicação
 
 - A chave publicável do Supabase pode aparecer no frontend; a proteção depende das políticas RLS e das funções validadas.
+- A auditoria do Supabase sinalizou a proteção contra senhas vazadas desabilitada. Ative-a em Auth → Password Security para rejeitar senhas conhecidas em vazamentos: https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection.
 - Nunca coloque `service_role` nem chaves secretas em `index.html`, `.env.example` ou GitHub. As Edge Functions usam o segredo de servidor no ambiente do Supabase.
 - O código está na branch `main` de [Wolf9729/expresso-gourmet](https://github.com/Wolf9729/expresso-gourmet).
 - O projeto Vercel existente foi usado para previews por upload direto; o vínculo de deploy automático via GitHub ainda precisa ser concluído sem trocar o domínio atual inadvertidamente.
