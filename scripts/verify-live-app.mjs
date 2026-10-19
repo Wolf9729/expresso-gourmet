@@ -43,11 +43,11 @@ for (const [fragment, label] of [
   ["get_sales_dashboard", "analytics uses the database sales RPC"],
   ["admin_save_product", "owner product edits use a transactional database RPC"],
   ["admin_update_store_settings", "store settings persist through an owner-only RPC"],
-  ["/functions/v1/staff-admin", "employee invitations use the protected staff endpoint"],
   ["set_order_payment_status", "payment confirmation uses a transactional RPC"],
   ["set_product_availability", "product availability changes use a database RPC"],
   ["advance_order_status", "order state transitions use a database RPC"],
   ["function cancelOrder(", "the staff UI supports safe cancellation of eligible orders"],
+  ["Novos convites temporariamente pausados", "the UI does not expose an unverified staff invite flow"],
   ["/rest/v1/categories?", "the admin editor reads live categories"],
   ["/rest/v1/business_settings?", "the owner settings screen reads persisted store settings"],
   ["connectOrdersRealtime", "staff queue initializes authenticated Realtime"],
@@ -60,6 +60,10 @@ for (const [fragment, label] of [
 }
 
 check(!rootHtml.includes("method:'PATCH',headers:Object.assign(staffAuthHeaders(),{Prefer:'return=minimal'}),body:JSON.stringify({status:transition[0]})"), "no direct client-side order status mutation");
+
+const staffAdminSource = readFileSync(join(root, "supabase/functions/staff-admin/index.ts"), "utf8");
+check(staffAdminSource.includes("admin.auth.getUser(token)") && staffAdminSource.includes('profile?.role !== "owner"') && staffAdminSource.includes("profile?.active !== true"), "staff-admin endpoint validates an active owner before inviting");
+check(!rootHtml.includes("team-invite-form") && !rootHtml.includes("function inviteTeamMember("), "no unverified invitation form can submit from the browser");
 
 const categoryMigration = readFileSync(join(root, "supabase/migrations/20261018171000_fix_authenticated_category_reads.sql"), "utf8");
 check(categoryMigration.includes("grant select on table public.categories to authenticated"), "category read permission is present in the SQL migration");
